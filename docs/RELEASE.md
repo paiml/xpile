@@ -910,6 +910,22 @@ tier), which is where you should read it.
    green exit code on an irreversible operation, **debug the verifier first**:
    uniform failure across N independent items means the harness is broken, not
    the operation.
+
+   **Then run the known answer on the INSTALLED binary (XPILE-CRUX-001,
+   xpile#2131).** Every other witness runs the tree's own build; this one runs
+   what `cargo install` hands a stranger:
+
+   ```bash
+   root=$(mktemp -d)
+   cargo install xpile --version <version> --locked --root "$root"
+   XPILE_BIN="$root/bin/xpile" XPILE_CRUX_VERSION=<version> \
+     cargo test -p xpile --test released_binary_crux -- --ignored
+   ```
+
+   Both positive controls must go RED on the same install:
+   `XPILE_CRUX_SELF_TEST=flip` (a wrong pinned answer) and `XPILE_BIN=/bin/echo`
+   (a stub binary). A control that stays green means the gate is broken, so a
+   green main run proves nothing: fix the gate before trusting the release.
 6. **Verify the RENDERED FRONT PAGE — the second non-clone publisher (PMAT-1486).**
 
    Step 5 proves the crate *arrived*. It says nothing about the document
