@@ -979,13 +979,15 @@ fn advertised_subcommands() -> Vec<String> {
 
 /// The names in clap's `Commands:` block: indented two spaces, ending at the
 /// first unindented non-blank line. Blank lines inside the block are skipped,
-/// and continuation lines of a long description are indented further.
+/// and continuation lines of a long description are indented further. A
+/// repeated `Commands:` header is skipped, not treated as the end.
 fn subcommand_names(help: &str) -> Vec<String> {
+    let header = |l: &&str| l.starts_with("Commands:");
     help.lines()
-        .skip_while(|l| !l.starts_with("Commands:"))
+        .skip_while(|l| !header(l))
         .skip(1)
-        .take_while(|l| l.starts_with("  ") || l.trim().is_empty())
-        .filter(|l| !l.trim().is_empty() && !l.starts_with("    "))
+        .take_while(|l| l.starts_with("  ") || l.trim().is_empty() || header(l))
+        .filter(|l| !header(l) && !l.trim().is_empty() && !l.starts_with("    "))
         .filter_map(|l| l.split_whitespace().next().map(str::to_string))
         .collect()
 }
