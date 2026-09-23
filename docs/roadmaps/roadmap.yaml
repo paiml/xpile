@@ -27025,3 +27025,23 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
   labels:
   - kind:code
   notes: 'Landed: d1acd96f (#2121), 2026-09-20. Two review rounds (2/2 do-not-implement, then 2/2 implement-as-written); docs/audits/quorum-PMAT-2120.json.'
+- id: PMAT-2123
+  github_issue: 2123
+  item_type: bug
+  title: pmat work cannot read the roadmap — 67 rows carry priority P0/P1, so every pmat work status and quorum-review call fails
+  status: inprogress
+  priority: high
+  assigned_to: null
+  created: 2026-09-23T19:00:00Z
+  updated: 2026-09-23T19:00:00Z
+  spec: null
+  acceptance_criteria:
+  - pmat work status PMAT-1516 exits 0 against docs/roadmaps/roadmap.yaml
+  - every priority is one of low, medium, high, critical (P0 -> critical, P1 -> high)
+  - roadmap_pmat_schema.rs gains an arm that goes RED on a re-inserted P1 and on origin/main's ledger
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'Epic #2124 (v0.1.619). PR #2129.'
