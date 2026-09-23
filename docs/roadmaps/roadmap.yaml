@@ -21280,7 +21280,7 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
 
     ZERO contracts/*.yaml change; the crates/*/src change is confined to the `diamond` reporter.'
   status: done
-  priority: P1
+  priority: high
   category: honesty
 - id: PMAT-1449
   title: 'PMAT-1449: [docs+gate+honesty+release] the RELEASE RUNBOOK told Thursday''s operator to publish a FALSE statement about what CI enforces -- it named the committed SNAPSHOT and called it the LIVE ruleset, overstating enforcement inside the section that discloses NON-enforcement.
@@ -21422,7 +21422,7 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
 
     ZERO contracts/*.yaml change; ZERO crates/*/src change -- docs and one gate file only.'
   status: done
-  priority: P1
+  priority: high
   category: honesty
 - id: PMAT-1451
   title: 'the gate for TOTAL §14.4 QUORUM -- "the one claim this repository exists to be
@@ -21516,7 +21516,7 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
 
     ZERO contracts/*.yaml change; ZERO crates/*/src change -- docs and one gate file only.'
   status: done
-  priority: P1
+  priority: high
   category: honesty
 - id: PMAT-1452
   title: 'the Lean pilot published its own size as "the 23 modules" in the build file whose
@@ -21588,7 +21588,7 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
 
     ZERO crates/*/src change. One contract YAML comment, two Lean comments, one gate file.'
   status: done
-  priority: P1
+  priority: high
   category: honesty
 - id: PMAT-1453
   title: 'PMAT-1453: [release+gate+honesty] the RELEASE RUNBOOK cited a LINE NUMBER and the text AT that line was the warning that the runbook was wrong -- a one-line version bump would have re-created the published-manifest skew PMAT-1408 removed, two days before the tag.
@@ -21737,7 +21737,7 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
 
     ZERO crates/*/src change. Six contract YAMLs, one spec doc, one gate file.'
   status: done
-  priority: P1
+  priority: high
   category: honesty
 - id: PMAT-1456
   title: 'the Kani harness that IS the Symbolic stratum published "100% of the substrate at QUORUM" — and `.rs` under `contracts/` was in no gate''s subject at all, though the text model 30 lines away already named it'
@@ -21807,7 +21807,7 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
     NEXT FREE ID IS PMAT-1457. Do NOT start a gate_touch and do NOT touch witness_floor.rs.
     HARD FREEZE Wed 2026-07-29 18:00. On 2026-07-30 take PMAT-1373; on 2026-07-31 PMAT-1374.'
   status: 'done'
-  priority: 'P1'
+  priority: high
   category: 'honesty'
 - id: PMAT-1455
   title: 'the sub-spec that grades xpile for the fleet published the substrate''s PROOF VOLUME as
@@ -21904,7 +21904,7 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
     FREEZE Wed 2026-07-29 18:00. On 2026-07-30 take PMAT-1373; on 2026-07-31 PMAT-1374. A1 IS
     STILL BLOCKED ON THE OWNER RULESET DECISION ALONE.'
   status: done
-  priority: P1
+  priority: high
   category: honesty
 - id: PMAT-1457
   title: 'the slice that wrote "FINAL needs a live count — still ungated" edited this Lean file and walked past the `**TWELFTH and FINAL**` 120 lines in, and a correct ordinal beside a false coverage clause read as checked'
@@ -21991,7 +21991,7 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
     FREEZE Wed 2026-07-29 18:00. On 2026-07-30 take PMAT-1373; on 2026-07-31 PMAT-1374. A1 IS
     STILL BLOCKED ON THE OWNER RULESET DECISION ALONE.'
   status: done
-  priority: P1
+  priority: high
   category: honesty
 - id: PMAT-1458
   title: 'the substrate says "12 contracts" 62 times and holds 35 — three of them in normative slots, and every one is TRUE in the half a reader checks'
@@ -22073,7 +22073,7 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
     FREEZE Wed 2026-07-29 18:00. On 2026-07-30 take PMAT-1373; on 2026-07-31 PMAT-1374. A1 IS
     STILL BLOCKED ON THE OWNER RULESET DECISION ALONE.'
   status: done
-  priority: P1
+  priority: high
   category: honesty
 - id: PMAT-1459
   title: 'the substrate publishes 138 falsification commands as its enforcement story and 70 of them cannot run — 67 name a target that never existed anywhere in the tree, and 3 exit 0 having compared nothing'
@@ -22176,7 +22176,7 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
     FREEZE Wed 2026-07-29 18:00. On 2026-07-30 take PMAT-1373; on 2026-07-31 PMAT-1374. A1 IS
     STILL BLOCKED ON THE OWNER RULESET DECISION ALONE.'
   status: done
-  priority: P1
+  priority: high
   category: honesty
 - id: PMAT-1461
   title: 'the gate that decided contract layers could not see 26 of the 35 contracts, and
@@ -22249,7 +22249,7 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
     contract at a time.
     NEXT FREE ID IS PMAT-1462.'
   status: done
-  priority: P1
+  priority: high
   category: honesty
 - id: PMAT-1460
   title: 'three contracts declare `layer: translation` in machine-readable metadata and are
@@ -22335,7 +22335,7 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
     ONLY. On 2026-07-30 take PMAT-1373; on 2026-07-31 PMAT-1374. A1 IS STILL BLOCKED ON THE
     OWNER RULESET DECISION ALONE.'
   status: done
-  priority: P1
+  priority: high
   category: honesty
 
 - id: PMAT-1462
@@ -22415,7 +22415,7 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
     ONLY. On 2026-07-30 take PMAT-1373; on 2026-07-31 PMAT-1374. A1 IS STILL BLOCKED ON THE
     OWNER RULESET DECISION ALONE.'
   status: done
-  priority: P1
+  priority: high
   category: honesty
 - id: PMAT-1463
   title: The five "COMPLETES DEPTH-N ACROSS ALL 5 TAXONOMY LAYERS" milestones never happened — 52 Diamond
@@ -22513,7 +22513,7 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
     Wed 2026-07-29 18:00 -- after it, CHANGELOG/version/docs/release mechanics ONLY. On 2026-07-30 take
     PMAT-1373; on 2026-07-31 PMAT-1374. A1 IS STILL BLOCKED ON THE OWNER RULESET DECISION ALONE.'
   status: done
-  priority: P1
+  priority: high
   category: honesty
 - id: PMAT-1464
   title: The repo's hero diagram drew six source languages and four of them had no frontend — the
@@ -22582,11 +22582,11 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
     NEXT FREE ID IS PMAT-1465. HARD FREEZE Wed 2026-07-29 18:00 -- after it, CHANGELOG/version/docs/release
     mechanics ONLY. On 2026-07-30 take PMAT-1373; on 2026-07-31 PMAT-1374.'
   status: done
-  priority: P1
+  priority: high
   category: honesty
 - id: PMAT-1466
   status: done
-  priority: P1
+  priority: high
   category: honesty
   title: The flagship crate's registry front page was a v0.0.1 "name reservation" stub with one commit
     ever, and the gated 647-commit product page was published on a bigint helper instead
@@ -22826,7 +22826,7 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
     NEXT FREE ID IS PMAT-1466. HARD FREEZE Wed 2026-07-29 18:00 -- after it, CHANGELOG/version/docs/
     release mechanics ONLY. On 2026-07-30 take PMAT-1373; on 2026-07-31 PMAT-1374.'
   status: done
-  priority: P1
+  priority: high
   category: honesty
 - id: PMAT-1467
   title: 'PMAT-1467: [release+gate+honesty] the SPRINT PLAN told Thursday''s operator to create and push a tag that ALREADY EXISTS -- its whole Release-plan section is one release behind, and PMAT-1453''s gate did not reach it.
@@ -22893,7 +22893,7 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
   notes: null
 - id: PMAT-1473
   status: done
-  priority: P1
+  priority: high
   category: honesty
   title: The release notes about to ship reported a divergence that had been FIXED -- the
     Known-divergences entry and the plan's "must NOT claim" list both still enforced the Lean caveat
@@ -22947,7 +22947,7 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
     PMAT-1468''s CHANGELOG entry independently reached the same conclusion. Out of scope.'
 - id: PMAT-1472
   status: done
-  priority: P1
+  priority: high
   category: honesty
   title: The Mathlib lane published a DERIVATION it does not carry -- "subsumes ... as special cases of
     one general theorem" -- on a packaged file no test had ever read
@@ -22999,7 +22999,7 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
     `ols_unique`". The page was wrong in one place and right in the rest.'
 - id: PMAT-1470
   status: done
-  priority: P1
+  priority: high
   category: honesty
   title: The release plan mandated a CHANGELOG story describing the range the PREVIOUS tag had already
     closed -- 14 of the 15 PMAT ids its eight arcs cited are not in the release range at all
@@ -23047,7 +23047,7 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
     narrower than its own rule.'
 - id: PMAT-1468
   status: done
-  priority: P1
+  priority: high
   category: honesty
   title: The `//`/`%` lowering this project REMOVED as incorrect in v0.1.237 was still published as the
     shipped lowering at 20 sites, including both Kani harnesses -- which proved the property that
@@ -23175,7 +23175,7 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
     2026-07-31 PMAT-1374.'
 - id: PMAT-1471
   status: done
-  priority: P1
+  priority: high
   category: honesty
   title: The PACKAGED `contracts/README.md` told crates.io readers that `workspace-test` blocks merges --
     it does not, and PMAT-1449's gate for that exact falsehood missed it on BOTH axes; plus `cargo
@@ -23286,7 +23286,7 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
     2026-07-31 PMAT-1374 (publish).'
 - id: PMAT-1474
   status: done
-  priority: P1
+  priority: high
   category: honesty
   title: The MOST SEVERE entry in "Known divergences" described a defect this same release
     fixed, and two of its metric entries had drifted -- one of them directly above its own
@@ -23374,7 +23374,7 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
     equation they discharge (PMAT-1468's class, never swept).
 - id: PMAT-1478
   status: done
-  priority: P1
+  priority: high
   category: honesty
   title: The section whose job is to disclose what is NOT enforced omitted one of the seven unenforced
     contexts -- the one whose green means least -- and the gate written for exactly that defect had the
@@ -23447,7 +23447,7 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
     unasserted number is a date-stamp masquerading as a fact.'
 - id: PMAT-1477
   status: done
-  priority: P1
+  priority: high
   category: honesty
   title: A stale forward-looking DIRECTIVE told Thursday's operator A1 was owner-blocked, and the ledgers
     carried a DUPLICATE work-item id that only a human procedure was checking for
@@ -23516,7 +23516,7 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
     ZERO `crates/*/src`, ZERO `contracts/*.yaml` -- freeze-compatible.'
 - id: PMAT-1475
   status: done
-  priority: P1
+  priority: high
   category: honesty
   title: '`workspace-test` never stopped blocking merges -- it was MOVED to a second ruleset,
     and the enforcement gate reported the move as a weakening for two days'
@@ -23592,7 +23592,7 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
     other cargo process live (see PMAT-1471's kani_verify shared-temp-dir trap).
 - id: PMAT-1476
   status: done
-  priority: P1
+  priority: high
   category: honesty
   title: PMAT-1475's own gate returned NONE over three live instances of the falsehood it was
     written for, one of them the sentence that originated it, in the section that ships
@@ -23676,7 +23676,7 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
     PMAT-1459's 70 disclosed rules at real falsifiers.
 - id: PMAT-1479
   status: done
-  priority: P1
+  priority: high
   category: honesty
   title: The shell lane published a refusal guarantee it does not have -- twenty out-of-surface
     constructs were probed and ALL TWENTY were accepted at exit 0, including the redirection in
@@ -23766,7 +23766,7 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
     this window; contracts/*.yaml).'
 - id: PMAT-1373
   status: done
-  priority: P1
+  priority: high
   category: release
   title: 'RELEASE COMMIT v0.1.618: 35 version literals bumped (not one), witness-floor re-derive
     TOUCH 2 across ALL ten lanes with every COUNT floor set TIGHT, CHANGELOG [Unreleased] promoted
@@ -23847,7 +23847,7 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
     tag, roll the batch to 2026-08-07), never a same-day hotfix onto the release SHA.'
 - id: PMAT-1480
   status: done
-  priority: P1
+  priority: high
   category: honesty
   title: The GitHub release page publishes this repository's facts and no gate can read it --
     0 of 613 published bodies match their CHANGELOG section, and 3,044 lines of release prose
@@ -23943,7 +23943,7 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
     `gh release create` MUST use the extractor above and MUST run the diff.'
 - id: PMAT-1483
   status: done
-  priority: P1
+  priority: high
   category: honesty
   title: Tomorrow's `gh release create` cannot run -- the release body the runbook mandates is
     469,246 characters against a MEASURED 125,000-character API cap (375% over), the trend crossed
@@ -23993,7 +23993,7 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
     and the needle-set widening. Refs XPILE-RELBODY-001, XPILE-RELPLAN-001.'
 - id: PMAT-1482
   status: done
-  priority: P1
+  priority: high
   category: honesty
   title: The sprint plan's own EXIT CRITERIA certify the release that already shipped -- 6 of 17
     pinned to 0.1.617, the two that matter most PASS thirty hours early, one can never pass, and
@@ -24116,7 +24116,7 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
     NEXT FREE ID PMAT-1483. NEXT PICK: 2026-07-31 -> PMAT-1374 (PUBLISH v0.1.618). NO FRIDAY CODE.'
 - id: PMAT-1481
   status: done
-  priority: P1
+  priority: high
   category: honesty
   title: The fix to the release runbook cannot reach the operator it was written for -- A1 pins
     them to the TAG and the fix landed FORTY MINUTES after it; and step 3 named a file, not a
@@ -24240,7 +24240,7 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
     dated heading.'
 - id: PMAT-1484
   status: done
-  priority: P1
+  priority: high
   category: honesty
   title: The release body that now FITS publishes none of the three sections it exists to publish
     -- PMAT-1483's size budget decided HOW MANY lines survive and nobody ever decided WHICH, so a
@@ -24332,7 +24332,7 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
     disclose the post-tag delta BY REFERENCE -- there is no room to append it.'
 - id: PMAT-1485
   status: done
-  priority: P1
+  priority: high
   category: honesty
   title: The release body points at a file it knows is 526 lines out of date and says nothing --
     TWO rules for the tag/main gap were written into the runbook across two slices and NEITHER was
@@ -24450,7 +24450,7 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
     day -- it was 97 lines on 07-29 and 526 on 07-30, so it will be larger again.'
 - id: PMAT-1486
   status: done
-  priority: P1
+  priority: high
   category: honesty
   title: The flagship's crates.io front page publishes 12 relative links and every one is wrong --
     packaging a root document into a subdirectory crate silently reinterprets every relative path in
@@ -24585,7 +24585,7 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
     and NOT a reason to touch the batch.'
 - id: PMAT-1487
   status: done
-  priority: P1
+  priority: high
   category: honesty
   title: The one crate of 31 with no library target is the one crate that points the registry's
     "Documentation" link at docs.rs -- an address that has never rendered a page and structurally
@@ -24704,7 +24704,7 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
   estimated_effort: null
 - id: PMAT-1489
   status: done
-  priority: P1
+  priority: high
   category: honesty
   title: Six published falsehoods were fixed in the tree yesterday, the gate that found them is
     green, and all six are still live on crates.io -- a gate over the SOURCE of a published
@@ -24757,7 +24757,7 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
     duplicated membership claim PMAT-1488 deleted.'
 - id: PMAT-1488
   status: done
-  priority: P1
+  priority: high
   category: honesty
   title: The canonical plan tells the release operator the abort-rule set is A1-A8, and the four
     rules that actually fire on ship day are A9, A10, A11 and A12 -- the rules were written down
@@ -24832,7 +24832,7 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
   estimated_effort: null
 - id: PMAT-1490
   status: done
-  priority: P1
+  priority: high
   category: honesty
   title: The job named `docs` has never built the documentation -- 58 defects on 13 of the 30
     published docs.rs pages, every lane green, and doc_status true for all thirty
@@ -24908,7 +24908,7 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
   estimated_effort: null
 - id: PMAT-1498
   status: done
-  priority: P1
+  priority: high
   category: honesty
   title: the sweep of every external command this repo publishes came back 30-of-31 clean and the
     CLI reference for the binary this repo BUILDS is 7-of-34 true -- and a gate written for exactly
@@ -24984,7 +24984,7 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
   estimated_effort: null
 - id: PMAT-1497
   status: done
-  priority: P1
+  priority: high
   category: honesty
   title: the sub-spec that defines this project's fleet membership publishes eight executable claims
     and six are false against the installed tool -- including both commands that constitute the
@@ -25062,7 +25062,7 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
   estimated_effort: null
 - id: PMAT-1496
   status: done
-  priority: P1
+  priority: high
   category: honesty
   title: The released CHANGELOG section credited v0.1.618 with fifteen slices that are not in the
     v0.1.618 tag -- the release commit rolled `[Unreleased]` away and opened no replacement
@@ -25108,7 +25108,7 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
     ZERO `crates/*/src`, ZERO `contracts/*.yaml`.'
 - id: PMAT-1495
   status: done
-  priority: P1
+  priority: high
   category: honesty
   title: docs/status/INDEX.md is one of three files named by hand in the strictest claim corpus in
     the repo, and two of the four registers it publishes have had no writer for seventy-three days
@@ -25198,7 +25198,7 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
   estimated_effort: null
 - id: PMAT-1494
   status: done
-  priority: P1
+  priority: high
   category: honesty
   title: The slip ledger whose stated purpose is telling a deliberate deviation from a forgotten
     one is empty, has no writer, and was born after every deviation it ranges over
@@ -25273,7 +25273,7 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
   estimated_effort: null
 - id: PMAT-1493
   status: done
-  priority: P1
+  priority: high
   category: honesty
   title: Six paragraphs mandate content for the release body, one step builds it, and that step's
     closing assertion aborts if you put any of them in
@@ -25351,7 +25351,7 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
     sweep for other duplicated normative sets.'
 - id: PMAT-1492
   status: done
-  priority: P1
+  priority: high
   category: honesty
   title: The section whose whole job is to bound the tool publishes 2 of the flagship frontend's
     348 refusals -- and the two lanes beside it are exhaustive, so nothing marks the difference
@@ -25430,7 +25430,7 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
     (b) assert SCOPE-MARKING rather than a count, since the roster grows every cycle.'
 - id: PMAT-1491
   status: done
-  priority: P1
+  priority: high
   category: honesty
   title: The abort rule whose ONLY action is disclosure told tomorrow's operator the defect was
     not there -- A11 stated the inverse of which release carries the README fix, and it
@@ -25496,7 +25496,7 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
   estimated_effort: null
 - id: PMAT-1499
   status: done
-  priority: P1
+  priority: high
   category: honesty
   title: a 19-line stub published seven tools, a transport, a telemetry guarantee and a SECURITY
     guarantee -- and its one true sentence was the last line of the file
@@ -25574,7 +25574,7 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
   estimated_effort: null
 - id: PMAT-1500
   status: done
-  priority: P1
+  priority: high
   category: honesty
   title: the isolation guarantee under which tomorrow's irreversible 31-crate publish is
     pre-flighted names a mechanism that does not produce it, and the tripwire that does could
@@ -25659,7 +25659,7 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
   estimated_effort: null
 - id: PMAT-1501
   status: done
-  priority: P1
+  priority: high
   category: honesty
   title: the last live carrier of the PMAT-1475/1476 ruleset-attribution falsehood is the file
     that hosts the markers the enforcement gate machine-reads, and the gate misses it for two
@@ -25728,7 +25728,7 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
   estimated_effort: null
 - id: PMAT-1374
   status: done
-  priority: P0
+  priority: critical
   category: release
   title: v0.1.618 published -- 31/31 crates, GitHub release, and the release-day findings only a
     published artefact can produce, including two pre-flight witnesses that cannot pass and an
@@ -25796,7 +25796,7 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
   date: '2026-07-31'
 - id: PMAT-1503
   status: done
-  priority: P1
+  priority: high
   category: honesty
   title: the release-day measurements only a published artefact can produce -- and TWO pre-flight
     witnesses that cannot pass, one of which makes abort rule A1's own two preconditions mutually
@@ -25857,7 +25857,7 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
   date: '2026-07-31'
 - id: PMAT-1502
   status: done
-  priority: P1
+  priority: high
   category: honesty
   title: an entire subsystem -- spec section 8, its sub-spec, the glossary term and the three
     contracts said to make it non-negotiable -- is published in the present indicative against
@@ -25946,7 +25946,7 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
   estimated_effort: null
 - id: PMAT-1504
   status: done
-  priority: P1
+  priority: high
   category: honesty
   title: the book's flagship page told every reader to run a command that exits 1, and offered as
     evidence for "the same governing contract" the two transcripts with the contract deleted --
@@ -26039,7 +26039,7 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
   estimated_effort: null
 - id: PMAT-1505
   status: done
-  priority: P1
+  priority: high
   category: honesty
   title: the test whose name ends in EXECUTED had never executed -- on this host or any other --
     because its guard asked `sh` a question no shell can answer, and a second, latent instance of
@@ -26181,7 +26181,7 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
   estimated_effort: null
 - id: PMAT-1506
   status: done
-  priority: P1
+  priority: high
   category: honesty
   title: an assertion whose antecedent is a string-literal needle the corpus does not contain --
     the test goes on passing, the passing-test count does not move, and the needle could never
@@ -26260,7 +26260,7 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
   estimated_effort: null
 - id: PMAT-1507
   status: done
-  priority: P1
+  priority: high
   category: honesty
   title: a loop over a git-ls-files-derived corpus that runs zero times skips every assertion
     inside it and still prints ok -- measured across the whole test corpus, the live reading is
@@ -26325,7 +26325,7 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
   estimated_effort: null
 - id: PMAT-1508
   status: done
-  priority: P1
+  priority: high
   category: honesty
   title: the gate written to catch checks that cannot fail accepted a print as a floor, and
     resolving a floor through a call was six false positives away -- the read_dir arm lands
@@ -26393,7 +26393,7 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
   estimated_effort: null
 - id: PMAT-1509
   status: done
-  priority: P1
+  priority: high
   category: honesty
   title: a floor above a filter is not a floor below it -- the doc-parse arm closes the
     vacuous-loop class, and both defects it found were in the anchor rules the previous
@@ -26470,7 +26470,7 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
     arm (2 / 27 / 34 memberships over 44 distinct sites) rather than implied by a 278-file corpus.'
 - id: PMAT-1510
   status: done
-  priority: P1
+  priority: high
   category: honesty
   title: an independent adversarial audit of the five slices that hunt hollow checks found eight
     overclaims inside them, three in the gate that started the series -- including a subject so
@@ -26580,7 +26580,7 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
   title: 'XPILE-BOOKTRANSCRIPT-001 arm (a) — EXECUTE every shell command a reader-facing
     page publishes, and check every checkout-precondition claim against the binary'
   status: done
-  priority: P1
+  priority: high
   notes: 'A `$ <cmd>` line in README.md or book/src is an EXECUTABLE claim and nothing in
     this repository had ever executed one. PMAT-1504 measured `rustc -O factorial.rs
     --crate-type lib --emit=metadata -o /dev/null` on quickstart.md:49 exiting 1 for 72 days
@@ -26682,7 +26682,7 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
   estimated_effort: null
 - id: PMAT-1512
   status: done
-  priority: P0
+  priority: critical
   category: honesty
   title: 489 Lean theorems and 108 Kani proofs could not be turned red by a wrong lowering because
     not one was ever built against xpile -- now one is, and breaking the shipped emitter fails it
@@ -26771,7 +26771,7 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
   estimated_effort: null
 - id: PMAT-1513
   status: done
-  priority: P1
+  priority: high
   category: honesty
   title: nothing in this repository ever ran `cargo doc`, so 58 rustdoc defects accumulated on the
     pages we publish -- the dominant kind renders as literal brackets, telling a docs.rs reader to
@@ -26830,7 +26830,7 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
   estimated_effort: null
 - id: PMAT-1514
   status: done
-  priority: P1
+  priority: high
   category: honesty
   title: the gate that executes published commands could not see four packaged READMEs, and
     mis-executed the multi-line blocks it did see -- three false accusations against correct
@@ -26903,7 +26903,7 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
   estimated_effort: null
 - id: PMAT-1515
   status: done
-  priority: P1
+  priority: high
   category: honesty
   title: a matcher that is not in a named const is invisible to the liveness gate standing next to
     it -- one of the three fixture-declaration conventions was dead on arrival, and the test whose
@@ -26956,7 +26956,7 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
   estimated_effort: null
 - id: PMAT-1516
   status: done
-  priority: P1
+  priority: high
   category: honesty
   title: the rule that says "each declared screen family must still match something" named five of
     the eight, because the list was typed instead of derived -- and the inline-matcher sweep it was
@@ -27023,6 +27023,20 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
   labels:
   - kind:code
   notes: 'Landed: d1acd96f (#2121), 2026-09-20. Two review rounds (2/2 do-not-implement, then 2/2 implement-as-written); docs/audits/quorum-PMAT-2120.json.'
+- id: PMAT-2123
+  github_issue: 2123
+  item_type: bug
+  title: pmat work cannot read the roadmap — 67 rows carry priority P0/P1, so every pmat work status and quorum-review call fails
+  status: inprogress
+  priority: high
+  assigned_to: null
+  created: 2026-09-23T19:00:00Z
+  updated: 2026-09-23T19:00:00Z
+  spec: null
+  acceptance_criteria:
+  - pmat work status PMAT-1516 exits 0 against docs/roadmaps/roadmap.yaml
+  - every priority is one of low, medium, high, critical (P0 -> critical, P1 -> high)
+  - roadmap_pmat_schema.rs gains an arm that goes RED on a re-inserted P1 and on origin/main's ledger
 - id: PMAT-2119
   github_issue: 2119
   item_type: bug
@@ -27042,4 +27056,5 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
   estimated_effort: null
   labels:
   - kind:code
+  notes: 'Epic #2124 (v0.1.619). PR #2129.'
   notes: 'Epic #2124 (v0.1.619).'
