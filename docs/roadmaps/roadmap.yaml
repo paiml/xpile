@@ -16745,7 +16745,6 @@ roadmap:
 - id: PMAT-1387
   github_issue: null
   item_type: task
-  priority: medium
   title: 'PMAT-1387: [honesty/hybrid-verify] `xpile hybrid --verify` -- the PMAT-902 NORTH STAR
     executing differential -- reported `✓ MATCH — stdout byte-identical (1 line(s)): ""` and
     exited 0 for a run in which NOTHING was observed and the reconciled FFI boundary was never
@@ -16804,7 +16803,6 @@ roadmap:
 - id: PMAT-1388
   github_issue: null
   item_type: task
-  priority: medium
   title: 'PMAT-1388: [honesty/spirv] `xpile transpile <ANY FILE> --target spirv` exited 0
     emitting a SPIR-V binary for a program the user NEVER WROTE. The general emitter bound its
     `Module` to `_module` and discarded it, always compiling the hardcoded
