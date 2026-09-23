@@ -39,7 +39,7 @@
 //! strictly worse — a green run proves nothing about the next one, and the
 //! failure is indistinguishable from an unrelated infrastructure hiccup.
 //!
-//! ## The two properties enforced here
+//! ## The three properties enforced here
 //!
 //! 1. **Verify in-step.** Any step that appends to `$GITHUB_PATH` must invoke
 //!    the tool it just installed, *in that same step*, by absolute path. In-step
@@ -54,7 +54,11 @@
 //!    `releases/latest`. Pinned release-asset downloads are not API-rate-limited
 //!    and are reproducible; "latest" is neither.
 //!
-//! Both are static: `std::fs` only, no network, no `gh`, no runner. This test
+//! 3. **Pin every `cargo install`** to an exact `--version` (xpile#2119): `pv`,
+//!    `cargo-deny` and `kani-verifier` floated with crates.io, so the linter a
+//!    green `gate` ran was whatever shipped that morning.
+//!
+//! All three are static: `std::fs` only, no network, no `gh`, no runner. This test
 //! cannot skip, so it holds in CI, offline, and inside an extracted `.crate`.
 //!
 //! **Not in scope:** whether the pinned version is current. A stale pin is a
@@ -318,4 +322,51 @@ fn the_wasi_job_pins_its_wasmtime_version() {
          interpolates it — the pin would be decorative."
     );
     eprintln!("XPILE-CI-INSTALL-001: wasi job pins wasmtime {version}");
+}
+
+/// Every `cargo install` in a workflow names an exact `--version`. Without one,
+/// the run takes whatever crates.io serves that day: `pv` (the contract linter
+/// the REQUIRED `gate` job runs), `cargo-deny` and `kani-verifier` were all
+/// unpinned until xpile#2119, so a green `gate` on two days could have been
+/// two different linters.
+#[test]
+fn every_cargo_install_pins_a_version() {
+    let mut installs = 0usize;
+    let mut unpinned: Vec<String> = Vec::new();
+    for path in workflow_files() {
+        let rel = path
+            .strip_prefix(workspace_root())
+            .unwrap_or(&path)
+            .display()
+            .to_string();
+        let text = fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {rel}: {e}"));
+        for (line_no, line) in text.lines().enumerate() {
+            if line.trim_start().starts_with('#') || !line.contains("cargo install ") {
+                continue;
+            }
+            installs += 1;
+            let pinned = line
+                .split_once("--version")
+                .map(|(_, v)| v.trim_start_matches(['=', ' ']))
+                .is_some_and(|v| v.starts_with(|c: char| c.is_ascii_digit()));
+            if !pinned {
+                unpinned.push(format!("  {rel}:{}: {}", line_no + 1, line.trim()));
+            }
+        }
+    }
+    // Six exist today (pv, cargo-deny ×3, kani-verifier, forjar); a
+    // floor above zero so deleting them all cannot green this vacuously.
+    assert!(
+        installs >= 4,
+        "XPILE-CI-INSTALL-001: only {installs} `cargo install` line(s) found in \
+         .github/workflows/ — the scan has gone blind"
+    );
+    assert!(
+        unpinned.is_empty(),
+        "XPILE-CI-INSTALL-001: {} `cargo install` line(s) have no exact \
+         `--version`:\n{}\n\nPin the version the last green run resolved \
+         (its log prints `Installing <crate> vX.Y.Z`).",
+        unpinned.len(),
+        unpinned.join("\n")
+    );
 }
