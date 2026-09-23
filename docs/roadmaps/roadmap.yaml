@@ -27037,6 +27037,12 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
   - pmat work status PMAT-1516 exits 0 against docs/roadmaps/roadmap.yaml
   - every priority is one of low, medium, high, critical (P0 -> critical, P1 -> high)
   - roadmap_pmat_schema.rs gains an arm that goes RED on a re-inserted P1 and on origin/main's ledger
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'Epic #2124 (v0.1.619). PR #2129.'
 - id: PMAT-2131
   github_issue: 2131
   item_type: task
@@ -27056,5 +27062,4 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
   estimated_effort: null
   labels:
   - kind:code
-  notes: 'Epic #2124 (v0.1.619). PR #2129.'
   notes: 'Epic #2124 (v0.1.619).'
