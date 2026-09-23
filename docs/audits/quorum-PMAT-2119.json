@@ -1,0 +1,77 @@
+{
+ "ticket": "PMAT-2119",
+ "pr": 2130,
+ "base": "main",
+ "head": "6a3977aae0fc7051f5016a3705ca240c6bfe7426",
+ "diff_sha256": "7385be97f71e986cf18260874cef66f74adcd4fc703908beb1370f211f868741",
+ "agreed": true,
+ "degraded": "same-family",
+ "degraded_basis": "Operator rule (~/.claude/CLAUDE.md, quorum fallback): agy measured quota-exhausted 2026-09-23 on every family (gemini 429 'Individual quota reached', openai and claude-via-agy 429 on pre-check; quorum-PMAT-2123 round 1), so lanes ran on Claude Code, same family as the author, marked degraded.",
+ "author": {
+  "session": "xpile-74",
+  "model": "claude-opus-5-5",
+  "family": "claude"
+ },
+ "executor": "claude-sequential",
+ "verdict": "round 1 lane 1 FAIL (deferral history misstated for lean-models; uncommitted Python walk cited) -> PR description corrected; round 2 3/3 PASS",
+ "rounds": [
+  {
+   "round": 1,
+   "judged": "1500bec9",
+   "lanes": [
+    {
+     "lane": 1,
+     "model": "claude-sonnet-5",
+     "family": "claude",
+     "verdict": "FAIL",
+     "agent": "a32ce352a885ac4bf"
+    }
+   ],
+   "findings": [
+    "commit 2e000a0e + PR description said kani/lake-build/lean-models were all promoted-then-removed 2026-07-05; only kani and lake-build were (measured: enforcement-handoff.md §2, ruleset-13878864.json history). APPLIED: PR description corrected; pushed history not rewritten (force-push owner-gated); squash message states it correctly.",
+    "PR description cited an uncommitted Python walk as evidence. APPLIED: reworded as an uncommitted author cross-check."
+   ],
+   "note": "round stopped after the blocking FAIL; lanes 2-3 not run"
+  },
+  {
+   "round": 2,
+   "judged": [
+    "1500bec9 (lanes 1-2)",
+    "6a3977aa (lane 3)"
+   ],
+   "lanes": [
+    {
+     "lane": 1,
+     "model": "claude-sonnet-5",
+     "family": "claude",
+     "role": "degraded-same-family",
+     "verdict": "PASS",
+     "agent": "a6786f1724ec132bc",
+     "findings": [
+      "asserted: the held gate patch was not verifiable. APPLIED: posted as a PR comment."
+     ]
+    },
+    {
+     "lane": 2,
+     "model": "claude-sonnet-5",
+     "family": "claude",
+     "role": "degraded-same-family",
+     "verdict": "PASS",
+     "agent": "ab0a681bc59bd4720",
+     "findings": [
+      "measured: PMAT-2119 acceptance line with unquoted ' #2130)' truncated by YAML. APPLIED: 6a3977aa (the only delta between the heads lanes 1-2 and lane 3 judged)."
+     ]
+    },
+    {
+     "lane": 3,
+     "model": "claude-sonnet-5",
+     "family": "claude",
+     "role": "degraded-same-family",
+     "verdict": "PASS",
+     "agent": "af7d8623d5f2720a0",
+     "findings": []
+    }
+   ]
+  }
+ ]
+}
