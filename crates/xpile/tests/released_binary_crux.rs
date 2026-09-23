@@ -62,8 +62,9 @@ bat 1
 /// answer with a wrong one.
 const FLIP: (&str, &str) = ("2432902008176640000\n", "2432902008176640001\n");
 
-/// Appended to the concatenated examples: a `main()` that calls each example
-/// once and prints the result, so the emitted crate is a runnable binary.
+/// Appended to the concatenated examples: a `main()` that calls into each
+/// example (`gcd` twice, the second call to pin floor-mod) and prints the
+/// results, so the emitted crate is a runnable binary.
 const DRIVER: &str = r#"
 
 def main() -> None:
