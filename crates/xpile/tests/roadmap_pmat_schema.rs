@@ -74,6 +74,10 @@ const PMAT_STATUSES: &[&str] = &[
     "cancelled",
 ];
 
+/// `pmat 3.41.1`, verbatim: "roadmap[1383].priority: unknown variant `P1`,
+/// expected one of `low`, `medium`, `high`, `critical`" (xpile#2123).
+const PMAT_PRIORITIES: &[&str] = &["low", "medium", "high", "critical"];
+
 fn workspace_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .parent()
@@ -192,6 +196,30 @@ fn every_status_is_one_pmat_accepts() {
          Reproduce: pmat work list; echo $?",
         offenders.len(),
         report(&offenders, "status", PMAT_STATUSES),
+    );
+}
+
+/// `priority` was the enum this gate did not check: 65 `P1` + 2 `P0` rows
+/// made every `pmat work` call fail (first at `roadmap[1383]`) while the two enum arms
+/// above stayed green (xpile#2123).
+#[test]
+fn every_priority_is_one_pmat_accepts() {
+    let offenders: Vec<(String, String)> = ledger_rows()
+        .iter()
+        .filter_map(|row| {
+            let p = field(row, "priority")?;
+            (!PMAT_PRIORITIES.contains(&p)).then(|| (p.to_string(), id_of(row)))
+        })
+        .collect();
+
+    assert!(
+        offenders.is_empty(),
+        "docs/roadmaps/roadmap.yaml uses {} priority value(s) pmat cannot parse.\n\n\
+         {}\n\
+         The mapping used by xpile#2123: P0->critical, P1->high.\n\n\
+         Reproduce: pmat work status PMAT-1516; echo $?",
+        offenders.len(),
+        report(&offenders, "priority", PMAT_PRIORITIES),
     );
 }
 
