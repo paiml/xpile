@@ -1,6 +1,14 @@
 //! XPILE-BOOKTRANSCRIPT-001 arm (a) (PMAT-1511) — **a shell command published
-//! in a reader-facing page is an EXECUTABLE claim, and nothing in this
-//! repository had ever executed one.**
+//! in a reader-facing page is an EXECUTABLE claim, and until this arm nothing
+//! in this repository executed the published command lines as a set.**
+//!
+//! (Corrected 2026-09-23, epic #2124. This headline used to say nothing had
+//! *ever* executed one. That was false: `cli_docs_drift.rs`
+//! (XPILE-CLIDOCS-001, PMAT-1429, three days earlier) already ran ONE
+//! published command, `xpile info`, and compared its output with the pinned
+//! transcript in `book/src/reference/cli.md`. It ran it through the test's own
+//! `CARGO_BIN_EXE_xpile` and ran no other published line, including the
+//! quickstart's `rustc … -o /dev/null` line described below.)
 //!
 //! ## Why this arm exists
 //!
@@ -221,110 +229,145 @@ fn published_commands(path: &Path) -> Vec<PublishedCmd> {
     let text = std::fs::read_to_string(path).expect("read corpus page");
     let lines: Vec<&str> = text.lines().collect();
     let mut out = Vec::new();
-
-    let mut in_fence = false;
-    let mut lang = String::new();
-    let mut fence_id = 0usize;
+    let mut fence = Fence::default();
     // Lines already absorbed into a multi-line command above (PMAT-1514).
     let mut skip_until = 0usize;
 
     for (idx, raw) in lines.iter().enumerate() {
         let s = raw.trim();
-        if let Some(tag) = s.strip_prefix("```") {
-            if in_fence {
-                in_fence = false;
-                lang.clear();
-            } else {
-                in_fence = true;
-                lang = tag.trim().to_string();
-                fence_id += 1;
-            }
+        if fence.step(s) || !fence.is_shell() || (idx <= skip_until && skip_until > 0) {
             continue;
         }
-        if !in_fence || !SHELL_FENCES.contains(&lang.as_str()) {
+        let Some((dollar, first)) = command_start(s) else {
             continue;
-        }
-        if idx <= skip_until && skip_until > 0 {
-            continue;
-        }
-        let dollar = s.starts_with("$ ");
-        let mut cmd = if dollar {
-            s[2..].trim().to_string()
-        } else if s.is_empty() || s.starts_with('#') {
-            continue;
-        } else {
-            s.to_string()
         };
-
-        // PMAT-1514: a published command may span lines, and executing the
-        // pieces separately is not a measurement of it.
-        //
-        // `crates/xpile/examples/README.md:20-23` publishes a `for … do …
-        // done` loop with `\` continuations. Line-split, the fragments are
-        // `sh: 1: Syntax error: end of file unexpected` — three offences
-        // reported against a page that is CORRECT. The command is the whole
-        // construct, so join it before judging it. Once joined, this one
-        // contains `cargo run --example` and the existing screen claims it,
-        // which is the right outcome by the taxonomy that was already there.
-        let mut consumed = 0usize;
-        while cmd.trim_end().ends_with('\\') || (starts_shell_block(&cmd) && !cmd.contains("done"))
-        {
-            let Some(next) = lines.get(idx + consumed + 1) else {
-                break;
-            };
-            let t = next.trim();
-            if t.starts_with("```") || t.starts_with("$ ") {
-                break;
-            }
-            // A `\` continuation is one logical line and joins with a SPACE.
-            // A new line inside a `for … do … done` body is a separate
-            // statement and joins with a NEWLINE — joining it with a space
-            // yields `echo "…" cargo run …`, which is a different command
-            // and a syntax error, i.e. another false accusation.
-            let was_continuation = cmd.trim_end().ends_with('\\');
-            let joined = cmd.trim_end().trim_end_matches('\\').trim_end().to_string();
-            cmd = if was_continuation {
-                format!("{joined} {t}")
-            } else {
-                format!("{joined}\n{t}")
-            };
-            consumed += 1;
-            if consumed > 20 {
-                break;
-            }
-        }
+        let (cmd, consumed) = join_multiline(&lines, idx, first);
         skip_until = idx + consumed;
-
-        let mut transcript = Vec::new();
-        for follow in &lines[idx + 1..] {
-            let t = follow.trim();
-            if t.starts_with("```") || t.starts_with("$ ") {
-                break;
-            }
-            transcript.push(t.to_string());
-        }
 
         out.push(PublishedCmd {
             file: rel(path),
             line: idx + 1,
-            cmd: cmd.clone(),
             comment: trailing_comment(&cmd),
-            transcript,
-            fence: fence_id,
+            cmd,
+            transcript: transcript_after(&lines, idx),
+            fence: fence.id,
             chained: false,
             dollar,
         });
     }
 
-    // Second pass: in a fence that HAS `$` lines, the bare lines are the
-    // transcript of the command above them — executing them would run the
-    // emitted Rust as if it were shell.
+    drop_transcript_lines(&mut out);
+    mark_chained_after_cd(&mut out);
+    out
+}
+
+/// Where the line scan is relative to Markdown code fences.
+#[derive(Default)]
+struct Fence {
+    open: bool,
+    lang: String,
+    /// Counts fences opened so far, so sequential commands share a scratch dir.
+    id: usize,
+}
+
+impl Fence {
+    /// Consume a fence delimiter line; `true` when `s` was one.
+    fn step(&mut self, s: &str) -> bool {
+        let Some(tag) = s.strip_prefix("```") else {
+            return false;
+        };
+        if self.open {
+            self.open = false;
+            self.lang.clear();
+        } else {
+            self.open = true;
+            self.lang = tag.trim().to_string();
+            self.id += 1;
+        }
+        true
+    }
+
+    fn is_shell(&self) -> bool {
+        self.open && SHELL_FENCES.contains(&self.lang.as_str())
+    }
+}
+
+/// `(dollar, command text)` for a line inside a shell fence, or `None` for a
+/// blank line or a bare `#` comment line.
+fn command_start(s: &str) -> Option<(bool, String)> {
+    if let Some(rest) = s.strip_prefix("$ ") {
+        Some((true, rest.trim().to_string()))
+    } else if s.is_empty() || s.starts_with('#') {
+        None
+    } else {
+        Some((false, s.to_string()))
+    }
+}
+
+/// PMAT-1514: a published command may span lines, and executing the
+/// pieces separately is not a measurement of it.
+///
+/// `crates/xpile/examples/README.md:20-23` publishes a `for … do …
+/// done` loop with `\` continuations. Line-split, the fragments are
+/// `sh: 1: Syntax error: end of file unexpected` — three offences
+/// reported against a page that is CORRECT. The command is the whole
+/// construct, so join it before judging it. Once joined, this one
+/// contains `cargo run --example` and the existing screen claims it,
+/// which is the right outcome by the taxonomy that was already there.
+///
+/// Returns the joined command and how many following lines it absorbed.
+fn join_multiline(lines: &[&str], idx: usize, mut cmd: String) -> (String, usize) {
+    let mut consumed = 0usize;
+    while cmd.trim_end().ends_with('\\') || (starts_shell_block(&cmd) && !cmd.contains("done")) {
+        let Some(next) = lines.get(idx + consumed + 1) else {
+            break;
+        };
+        let t = next.trim();
+        if t.starts_with("```") || t.starts_with("$ ") {
+            break;
+        }
+        // A `\` continuation is one logical line and joins with a SPACE.
+        // A new line inside a `for … do … done` body is a separate
+        // statement and joins with a NEWLINE — joining it with a space
+        // yields `echo "…" cargo run …`, which is a different command
+        // and a syntax error, i.e. another false accusation.
+        let was_continuation = cmd.trim_end().ends_with('\\');
+        let joined = cmd.trim_end().trim_end_matches('\\').trim_end().to_string();
+        cmd = if was_continuation {
+            format!("{joined} {t}")
+        } else {
+            format!("{joined}\n{t}")
+        };
+        consumed += 1;
+        if consumed > 20 {
+            break;
+        }
+    }
+    (cmd, consumed)
+}
+
+/// The lines a page prints under the command at `idx`, up to the next `$ `
+/// or the closing fence.
+fn transcript_after(lines: &[&str], idx: usize) -> Vec<String> {
+    lines[idx + 1..]
+        .iter()
+        .map(|l| l.trim())
+        .take_while(|t| !t.starts_with("```") && !t.starts_with("$ "))
+        .map(str::to_string)
+        .collect()
+}
+
+/// Second pass: in a fence that HAS `$` lines, the bare lines are the
+/// transcript of the command above them — executing them would run the
+/// emitted Rust as if it were shell.
+fn drop_transcript_lines(out: &mut Vec<PublishedCmd>) {
     let dollar_fences: BTreeSet<usize> = out.iter().filter(|c| c.dollar).map(|c| c.fence).collect();
     out.retain(|c| c.dollar || !dollar_fences.contains(&c.fence));
+}
 
-    // Third pass (PMAT-1514): a `cd` screens the REST OF ITS BLOCK, not just
-    // its own line.
-    //
+/// Third pass (PMAT-1514): a `cd` screens the REST OF ITS BLOCK, not just
+/// its own line.
+fn mark_chained_after_cd(out: &mut [PublishedCmd]) {
     // The `cd ` screen's reason has always read "CHAINED_DIRCHANGE — depends on
     // a screened predecessor", and nothing implemented the *depends on* half:
     // only the `cd` line itself was screened, and every later line in the same
@@ -342,7 +385,7 @@ fn published_commands(path: &Path) -> Vec<PublishedCmd> {
     // downloads 5.3 GB of Mathlib, which is its own reason a test must never
     // execute this block.
     let mut first_cd: BTreeMap<usize, usize> = BTreeMap::new();
-    for c in &out {
+    for c in out.iter() {
         if bare_command(c).trim_start().starts_with("cd ") {
             let e = first_cd.entry(c.fence).or_insert(c.line);
             if c.line < *e {
@@ -350,12 +393,11 @@ fn published_commands(path: &Path) -> Vec<PublishedCmd> {
             }
         }
     }
-    for c in &mut out {
+    for c in out.iter_mut() {
         if first_cd.get(&c.fence).is_some_and(|at| c.line > *at) {
             c.chained = true;
         }
     }
-    out
 }
 
 /// Does this line open a multi-line shell construct whose body follows?
@@ -932,31 +974,20 @@ fn advertised_subcommands() -> Vec<String> {
         .output()
         .expect("xpile --help");
     assert!(out.status.success(), "`xpile --help` must exit 0");
-    let text = String::from_utf8_lossy(&out.stdout);
-    let mut in_cmds = false;
-    let mut subs = Vec::new();
-    for line in text.lines() {
-        if line.starts_with("Commands:") {
-            in_cmds = true;
-            continue;
-        }
-        if in_cmds {
-            if line.trim().is_empty() || !line.starts_with("  ") {
-                if !line.starts_with("  ") && !line.trim().is_empty() {
-                    break;
-                }
-                continue;
-            }
-            // Continuation lines of a long description are indented further.
-            if line.starts_with("    ") {
-                continue;
-            }
-            if let Some(name) = line.split_whitespace().next() {
-                subs.push(name.to_string());
-            }
-        }
-    }
-    subs
+    subcommand_names(&String::from_utf8_lossy(&out.stdout))
+}
+
+/// The names in clap's `Commands:` block: indented two spaces, ending at the
+/// first unindented non-blank line. Blank lines inside the block are skipped,
+/// and continuation lines of a long description are indented further.
+fn subcommand_names(help: &str) -> Vec<String> {
+    help.lines()
+        .skip_while(|l| !l.starts_with("Commands:"))
+        .skip(1)
+        .take_while(|l| l.starts_with("  ") || l.trim().is_empty())
+        .filter(|l| !l.trim().is_empty() && !l.starts_with("    "))
+        .filter_map(|l| l.split_whitespace().next().map(str::to_string))
+        .collect()
 }
 
 /// `true` when the subcommand exits 0 with NO checkout in sight.
@@ -990,55 +1021,61 @@ fn measured_checkout_freedom() -> BTreeMap<String, bool> {
 ///
 /// * a trailing comment on a `$ xpile <sub>` line — the subject is unambiguous;
 /// * a prose sentence naming one or more backticked `xpile <sub>` commands.
-fn precondition_claims() -> Vec<(String, usize, String, String, bool)> {
-    let mut claims = Vec::new();
-
-    // Arm B1 — trailing comments on published `xpile` commands.
-    for c in all_commands() {
-        let Some(comment) = &c.comment else { continue };
-        let low = comment.to_lowercase();
-        let Some(sub) = bare_command(&c)
-            .strip_prefix("xpile ")
-            .and_then(|r| r.split_whitespace().next())
-            .map(str::to_string)
-        else {
-            continue;
-        };
-        if let Some(needs) = verdict_of(&low) {
-            claims.push((c.file.clone(), c.line, sub, comment.clone(), needs));
-        }
-    }
-
-    // Arm B2 — prose sentences naming backticked `xpile <sub>` commands.
+fn precondition_claims() -> Vec<Claim> {
+    let mut claims = comment_claims();
     for page in corpus() {
         let text = std::fs::read_to_string(&page).expect("read corpus page");
         for unit in prose_units(&text) {
             for sentence in unit.split(". ") {
-                let low = sentence.to_lowercase();
-                let Some(needs) = verdict_of(&low) else {
-                    continue;
-                };
-                for tok in sentence.split('`') {
-                    let Some(rest) = tok.trim().strip_prefix("xpile ") else {
-                        continue;
-                    };
-                    let sub = rest.split_whitespace().next().unwrap_or("").to_string();
-                    if sub.is_empty() || sub.starts_with('-') {
-                        continue;
-                    }
-                    let line = line_of(&text, sentence.split_whitespace().next().unwrap_or(""));
-                    claims.push((
-                        rel(&page),
-                        line,
-                        sub,
-                        sentence.trim().chars().take(140).collect::<String>(),
-                        needs,
-                    ));
-                }
+                claims.extend(sentence_claims(&rel(&page), &text, sentence));
             }
         }
     }
     claims
+}
+
+/// `(file, line, subcommand, claim text, needs-a-checkout)`.
+type Claim = (String, usize, String, String, bool);
+
+/// Arm B1 — trailing comments on published `xpile` commands.
+fn comment_claims() -> Vec<Claim> {
+    all_commands()
+        .into_iter()
+        .filter_map(|c| {
+            let comment = c.comment.clone()?;
+            let sub = bare_command(&c)
+                .strip_prefix("xpile ")
+                .and_then(|r| r.split_whitespace().next())
+                .map(str::to_string)?;
+            let needs = verdict_of(&comment.to_lowercase())?;
+            Some((c.file.clone(), c.line, sub, comment, needs))
+        })
+        .collect()
+}
+
+/// Arm B2 — one prose sentence naming backticked `xpile <sub>` commands.
+fn sentence_claims(page: &str, text: &str, sentence: &str) -> Vec<Claim> {
+    let Some(needs) = verdict_of(&sentence.to_lowercase()) else {
+        return Vec::new();
+    };
+    sentence
+        .split('`')
+        .filter_map(|tok| {
+            let rest = tok.trim().strip_prefix("xpile ")?;
+            let sub = rest.split_whitespace().next().unwrap_or("").to_string();
+            if sub.is_empty() || sub.starts_with('-') {
+                return None;
+            }
+            let line = line_of(text, sentence.split_whitespace().next().unwrap_or(""));
+            Some((
+                page.to_string(),
+                line,
+                sub,
+                sentence.trim().chars().take(140).collect::<String>(),
+                needs,
+            ))
+        })
+        .collect()
 }
 
 /// Split a page into the units a claim can live in.
