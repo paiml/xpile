@@ -27043,6 +27043,26 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
   labels:
   - kind:code
   notes: 'Epic #2124 (v0.1.619). PR #2129.'
+- id: PMAT-2119
+  github_issue: 2119
+  item_type: bug
+  title: 'PVL-F3: proof jobs advisory; aprender-contracts-cli install unpinned; Lean files not paired with contracts'
+  status: inprogress
+  priority: high
+  assigned_to: null
+  created: 2026-09-23T19:30:00Z
+  updated: 2026-09-23T19:30:00Z
+  spec: null
+  acceptance_criteria:
+  - 'every cargo install in .github/workflows pins --version (PR #2130)'
+  - every theorem-bearing .lean file under contracts/ is cited by a contract lean_file, or listed UNCITED with a reason
+  - making kani / lake-build / lean-models block is an OWNER decision (ruleset-reflip), escalated 2026-09-23
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'Epic #2124 (v0.1.619).'
 - id: PMAT-2131
   github_issue: 2131
   item_type: task
