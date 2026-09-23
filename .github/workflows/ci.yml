@@ -36,13 +36,13 @@ jobs:
         run: cargo clippy --workspace --all-targets -- -D warnings
 
       - name: Install pv (aprender-contracts-cli)
-        run: cargo install aprender-contracts-cli --locked
+        run: cargo install aprender-contracts-cli --locked --version 0.68.2
 
       - name: pv lint contracts/
         run: pv lint contracts/
 
       - name: Install cargo-deny
-        run: cargo install cargo-deny --locked
+        run: cargo install cargo-deny --locked --version 0.20.2
 
       # NOTE (PMAT-1409): `advisories` is the only check kind this REQUIRED job
       # runs. `licenses`, `bans` and `sources` are configured in deny.toml and
@@ -228,7 +228,7 @@ jobs:
           prefix-key: "kani-v0"
 
       - name: Install kani-verifier
-        run: cargo install --locked kani-verifier
+        run: cargo install --locked kani-verifier --version 0.68.0
 
       # Kani ≥ 0.67 auto-bootstraps its toolchain (CBMC + solvers)
       # on the first `cargo kani` invocation rather than via a
@@ -537,7 +537,7 @@ jobs:
           prefix-key: "license-scan-v0"
 
       - name: Install cargo-deny
-        run: cargo install cargo-deny --locked
+        run: cargo install cargo-deny --locked --version 0.20.2
 
       - name: drift tripwire — NOTICE.md equals the live rejection set
         run: cargo test -p xpile --test dependency_license_policy -- --nocapture
