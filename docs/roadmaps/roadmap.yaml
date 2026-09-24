@@ -27224,7 +27224,7 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
 - id: PMAT-2145
   github_issue: 2145
   item_type: bug
-  title: "hybrid: a Python bool argument to a C int boundary emits a workspace that fails E0308"
+  title: "hybrid: a Python bool or int argument to a C scalar boundary (int, long long, float, double) emits a workspace that fails E0308"
   status: inprogress
   priority: high
   assigned_to: null
@@ -27232,11 +27232,12 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
   updated: 2026-09-24T12:00:00Z
   spec: null
   acceptance_criteria:
-  - a bool argument to a scalar int C boundary builds and matches CPython under plain --verify
+  - a bool argument to any scalar C boundary (int, long long, float, double) builds and matches CPython under plain --verify (the issue's done_when, verbatim scope)
+  - an int argument to a C double or float boundary builds and matches CPython (measured while fixing; same E0308 class, same bridge; disclosed on the issue)
   - the repair loop's convergence witness is re-pointed at a production symptom that still exists
   phases: []
   subtasks: []
   estimated_effort: null
   labels:
   - kind:code
-  notes: 'Epic #2124 (v0.1.619). Stacked on PR #2146 (PMAT-2139).'
+  notes: 'Epic #2124 (v0.1.619). Stacked on PR #2146 (PMAT-2139). The first criterion was first written here as "a scalar int C boundary", narrower than the issue; quorum round 1 read that and FAILed the double bridge as out of scope. Corrected to the issue''s own scope.'
