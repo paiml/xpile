@@ -3925,7 +3925,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-956: [frontier/provable-model-as-code] emit a small classical-ML model AS proven code — a proven Rust function + const weights + a Lean OLS-minimizer-uniqueness certificate — superseding the serialized .apr blob for small-parameter models. For linear/logistic regression a fitted model is a tiny pure function over const weights; it should ship as a PROVEN Rust fn (with the predict path) carrying a Lean certificate that the OLS minimizer is unique (the normal-equation solution), NOT an opaque .apr deserialization. aprender already binds OLS fit to Lean via #[contract("linear-models-v1", equation = "ols_fit")]; the missing piece is the EMIT — lower the fitted model into meta-HIR const + fn and attach the uniqueness proof. .apr survives only where parameters dominate (LLMs); the boundary is the v1/v2 .apr magic byte.'
-  status: planned
+  status: done
   priority: medium
   created: 2026-06-25T00:00:00Z
   acceptance_criteria:
@@ -9042,7 +9042,7 @@ roadmap:
   github_issue: 496
   item_type: task
   title: 'PMAT-465: Reprioritize v0.2.0 roadmap by expected value; freeze Diamond depth at 13; encode autonomous high-EV pickup order'
-  status: inprogress
+  status: cancelled
   priority: high
   created: 2026-06-11T00:00:00Z
   acceptance_criteria:
@@ -27027,7 +27027,7 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
   github_issue: 2123
   item_type: bug
   title: pmat work cannot read the roadmap — 67 rows carry priority P0/P1, so every pmat work status and quorum-review call fails
-  status: inprogress
+  status: done
   priority: high
   assigned_to: null
   created: 2026-09-23T19:00:00Z
@@ -27042,7 +27042,7 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
   estimated_effort: null
   labels:
   - kind:code
-  notes: 'Epic #2124 (v0.1.619). PR #2129.'
+  notes: 'Landed: 9a3a336b (#2129), 2026-09-23. Quorum docs/audits/quorum-PMAT-2123.json.'
 - id: PMAT-2119
   github_issue: 2119
   item_type: bug
@@ -27062,4 +27062,4 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
   estimated_effort: null
   labels:
   - kind:code
-  notes: 'Epic #2124 (v0.1.619).'
+  notes: 'Epic #2124. Partly landed: 2c370e21 (#2130) pinned every CI cargo install and added XPILE-LEAN-PAIRING-001. Open: making kani / lake-build / lean-models block, an owner decision (ruleset-reflip).'
