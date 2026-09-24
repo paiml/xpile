@@ -27075,7 +27075,8 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
   spec: null
   acceptance_criteria:
   - 'ids_in_range counts ids exactly as grep -oE PMAT-[0-9]+ does, including foo-PMAT-N and PMAT-N-suffix'
-  - a constructed-message red arm fails on the old tokenizer
+  - a constructed-message red arm fails on the old tokenizer, committed as an assertion
+  - 'the file must pass the local pre-commit complexity gate (cognitive 25) to be committable at all: the roster rule''s two inline copies of the strict tokenizer move, unchanged, into bare_token_ids'
   phases: []
   subtasks: []
   estimated_effort: null

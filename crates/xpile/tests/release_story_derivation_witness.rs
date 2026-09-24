@@ -165,6 +165,18 @@ fn pmat_ids_agrees_with_the_plans_grep_on_hyphenated_spellings() {
         "pmat_ids must match grep -oE 'PMAT-[0-9]+' exactly, or the plan's \
          derivation and this test's extraction can disagree over a range"
     );
+    // The RED ARM, committed: the whole-token tokenizer `ids_in_range` used
+    // before xpile#2136 (still used, deliberately, by the roster rule as
+    // `bare_token_ids`) misses exactly the hyphen-joined spellings on this same
+    // message. If this ever passes, the message no longer exercises the defect.
+    let strict = bare_token_ids(msg);
+    for missed in ["PMAT-2119", "PMAT-2120", "PMAT-7"] {
+        assert!(
+            !strict.contains(&missed.to_string()),
+            "the constructed message no longer separates the two tokenizers: the \
+             strict one now finds {missed}, so this test would pass on the old code"
+        );
+    }
 }
 
 /// A count is a HISTORICAL REPORT when the same paragraph attributes it to an
