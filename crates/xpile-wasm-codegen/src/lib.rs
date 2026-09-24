@@ -28180,5 +28180,25 @@ fn expr_kind(e: &Expr) -> &'static str {
     }
 }
 
+/// PMAT-2151: scalar seams for the Kani proofs in `contracts/kani/` that verify
+/// THIS crate rather than a model of it (see `proof_seam_witness.rs`).
+///
+/// Each item forwards to the private fn the emitter itself calls, so a wrong
+/// edit to that fn turns its harness red. Not a public API.
+#[doc(hidden)]
+pub mod proof_seams {
+    use xpile_meta_hir::BinOp;
+
+    /// [`super::align8`], unchanged.
+    pub fn align8(n: i32) -> i32 {
+        super::align8(n)
+    }
+
+    /// [`super::is_commutative_monoid_op`], unchanged.
+    pub fn is_commutative_monoid_op(op: BinOp) -> bool {
+        super::is_commutative_monoid_op(op)
+    }
+}
+
 #[cfg(test)]
 mod tests;

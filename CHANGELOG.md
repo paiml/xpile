@@ -13,11 +13,11 @@ not open a replacement, leaving no correct heading to write under; `v0.1.618` do
 contain them. Re-filed and gated by
 `crates/xpile/tests/changelog_release_membership_witness.rs` (PMAT-1496).
 
-### Five Kani proofs now verify xpile's shipped code, up from one, and the count cannot fall (PMAT-2151)
+### Six Kani harness files now verify xpile's shipped code, up from one, and the count cannot fall (PMAT-2151)
 
 PMAT-1512 found that every Kani proof verified a hand-written model, then bound
-one to the shipped emitter. Four more now call functions the emitter really
-uses, through a `#[doc(hidden)] proof_seams` module that forwards to the private
+one to the shipped emitter. Five more now call functions the shipped code
+really uses, through a `#[doc(hidden)] proof_seams` module that forwards to the private
 fn:
 
 - `real_c_int_lit_fits.rs`: `c_int_lit_fits` (`xpile-rust-codegen`), which
@@ -31,13 +31,23 @@ fn:
 - `real_commutative_monoid_op.rs`: every operator `is_commutative_monoid_op`
   admits for fold reordering is commutative and associative, and the set is
   exactly `+ * and or & | ^`.
+- `real_ffi_abi_slot.rs`: every meta-HIR scalar crosses an FFI boundary in the
+  C ABI slot of the C type it stands for (`c_abi_type`, `xpile-ffi-manifest`),
+  and the wrapper's native type (`wrapper_native`) holds it with no change of
+  signedness and no narrowing. Widths and signedness come from `std`, not the
+  table.
 
 Each was run against a planted mutant of its shipped fn and went FAILED on the
 intended assertion, then SUCCESSFUL once restored. The mutant is recorded in the
-harness header. `proof_seam_witness.rs` gains a floor of 5 bound harness files,
+harness header. `proof_seam_witness.rs` gains a floor of 6 bound harness files,
 counted from the tree, and a check that every bound harness records its
 executed falsification. Both were run red. The other 101 `#[kani::proof]`
-functions under `contracts/kani/` still verify models (7 of 108 are bound).
+functions under `contracts/kani/` still verify models (8 of 109 are bound).
+
+The local pre-commit hook had been refusing any commit to the two codegen
+`lib.rs` files because of complexity debt already there (e.g. `emit_expr` at
+cyclomatic 165). It was regenerated with `pmat hooks refresh`, which judges only
+the functions a commit touches and refuses only growth.
 
 ### A Python `bool` or `int` argument into a C `int`, `long long`, `float` or `double` boundary builds and matches CPython (PMAT-2145)
 

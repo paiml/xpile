@@ -27,11 +27,13 @@
 //! the governed set turns it FAILED in 27 ms; restoring it returns SUCCESSFUL.
 //!
 //! **That was one proof out of over a hundred.** PMAT-2151 (epic #2125) added
-//! four more files, each proving a scalar predicate the emitter really calls:
-//! `c_int_lit_fits` and `c_binop_is_modular` (`xpile-rust-codegen`, the C-lane
-//! literal conversion of PMAT-1399), and `align8` and `is_commutative_monoid_op`
-//! (`xpile-wasm-codegen`, the literal layout and the fold-reordering
-//! decision). Each was run RED against a planted mutant of its shipped fn
+//! five more files, each proving a scalar predicate the shipped code really
+//! calls: `c_int_lit_fits` and `c_binop_is_modular` (`xpile-rust-codegen`, the
+//! C-lane literal conversion of PMAT-1399), `align8` and
+//! `is_commutative_monoid_op` (`xpile-wasm-codegen`, the literal layout and the
+//! fold-reordering decision), and `c_abi_type` with `wrapper_native`
+//! (`xpile-ffi-manifest`, the C ABI slot and wrapper type at an FFI boundary).
+//! Each was run RED against a planted mutant of its shipped fn
 //! before this file counted it, and its header records the mutant.
 //!
 //! The rest still verify models, and this gate keeps that fact written down:
@@ -261,7 +263,7 @@ fn no_document_claims_the_whole_emitter_is_machine_checked() {
 
 /// The floor for [`the_bound_harness_count_does_not_fall`]: the number of
 /// harness FILES bound to shipped code when PMAT-2151 raised it from 1.
-const BOUND_HARNESS_FLOOR: usize = 5;
+const BOUND_HARNESS_FLOOR: usize = 6;
 
 /// PROPERTY 6 — the bound count only moves up (PMAT-2151).
 ///
