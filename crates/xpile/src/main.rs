@@ -335,18 +335,104 @@ fn hybrid(
     if sources.is_empty() {
         bail!("no source files xpile recognises under {}", path.display());
     }
-    let mut modules = Vec::new();
-    // PMAT-901: retain each C file's (filename, source) so `--emit-workspace` can
-    // write it into the workspace for `build.rs` to cc-compile — the Module IR
-    // does not carry the original source text.
-    let mut c_sources: Vec<(String, String)> = Vec::new();
-    // PMAT-902: retain each Python file's (filename, source) so `--verify` can run
-    // the original `main()` under CPython as the differential reference.
-    let mut py_sources: Vec<(String, String)> = Vec::new();
-    // PMAT-1362: retain each shell script's (filename, source) so `--verify` can
-    // run the ORIGINAL script under `sh` as the shell lane's reference — the
-    // artifact side spawns the RE-EMITTED script, so both texts are needed.
-    let mut sh_sources: Vec<(String, String)> = Vec::new();
+    let HybridSources {
+        mut modules,
+        c_sources,
+        py_sources,
+        sh_sources,
+    } = dispatch_hybrid_sources(session, sources)?;
+
+    println!(
+        "xpile hybrid: {} module(s) dispatched from {}",
+        modules.len(),
+        path.display()
+    );
+    // PMAT-898: with the full module set in hand, rewrite each boundary's
+    // provisional `to_lang` (hardcoded C by the single-file frontend) to the
+    // language of the sibling that actually defines the symbol — so a relative
+    // import of a Python sibling becomes Python→Python (dropped by reconcile),
+    // not a false Python→C FFI boundary.
+    resolve_boundary_to_langs(&mut modules);
+    let manifest = match FfiManifest::reconcile(&modules) {
+        Ok(manifest) => manifest,
+        Err(err) => {
+            eprintln!("xpile hybrid: FFI reconciliation FAILED");
+            for u in &err.unresolved {
+                eprintln!("    {u}");
+            }
+            // Non-zero exit: an unresolved boundary blocks the hybrid build.
+            bail!("{} unresolved FFI boundary(ies)", err.unresolved.len())
+        }
+    };
+    // PMAT-931: re-type the FFI call sites of reconciled `double`-
+    // returning C symbols in the calling (Python) module — the Python
+    // frontend lowered them with the unknown-callee I64 default before
+    // the C side was known, mis-rendering a whole double (`10` vs
+    // Python's `10.0`) and mistyping `let r: float` (rustc E0308).
+    retype_float_ffi_sites(&manifest, &mut modules);
+    print_manifest(&manifest);
+    // PMAT-899 Phase 4: with `--emit-shims <path>`, lower the reconciled
+    // manifest to a self-contained Rust FFI shim file (per-paradigm: real
+    // `extern "C"` for C, `Command` for Shell; a mechanism-named gap for
+    // the rest). All-or-nothing — any unshimmable boundary fails loud, so
+    // a half-shimmed hybrid build never reaches disk.
+    if let Some(out_path) = emit_shims {
+        if manifest.entries.is_empty() {
+            println!("  --emit-shims: no FFI boundaries — nothing to emit");
+            return Ok(());
+        }
+        emit_shims_file(&manifest, &modules, out_path)?;
+    }
+    // PMAT-901 Phase 5a: with `--emit-workspace <dir>`, emit a buildable
+    // Cargo workspace — the C side as cc-compiled + linked objects, the
+    // non-C modules lowered to Rust, and the reconciled `extern "C"` shims
+    // wiring them together. `cargo build` it for the first executing
+    // hybrid artifact.
+    if let Some(ws_dir) = emit_workspace {
+        emit_workspace_dir(session, &manifest, &modules, &c_sources, ws_dir)?;
+    }
+    // PMAT-902 NORTH STAR: `--verify` runs the executing differential.
+    if verify {
+        return verify_hybrid(
+            session,
+            &manifest,
+            &modules,
+            &c_sources,
+            &py_sources,
+            &sh_sources,
+            repair,
+        );
+    }
+    Ok(())
+}
+
+/// The dispatched modules of a hybrid directory, plus the original source text
+/// of the files `--emit-workspace` and `--verify` need verbatim.
+struct HybridSources {
+    modules: Vec<Module>,
+    /// PMAT-901: each C file's (filename, source), so `--emit-workspace` can
+    /// write it into the workspace for `build.rs` to cc-compile — the Module IR
+    /// does not carry the original source text.
+    c_sources: Vec<(String, String)>,
+    /// PMAT-902: each Python file's (filename, source), so `--verify` can run
+    /// the original `main()` under CPython as the differential reference.
+    py_sources: Vec<(String, String)>,
+    /// PMAT-1362: each shell script's (filename, source), so `--verify` can run
+    /// the ORIGINAL script under `sh` as the shell lane's reference — the
+    /// artifact side spawns the RE-EMITTED script, so both texts are needed.
+    sh_sources: Vec<(String, String)>,
+}
+
+fn dispatch_hybrid_sources(
+    session: &TranspileSession,
+    sources: Vec<PathBuf>,
+) -> Result<HybridSources> {
+    let mut out = HybridSources {
+        modules: Vec::new(),
+        c_sources: Vec::new(),
+        py_sources: Vec::new(),
+        sh_sources: Vec::new(),
+    };
     for src in sources {
         let contents =
             std::fs::read_to_string(&src).with_context(|| format!("reading {}", src.display()))?;
@@ -364,112 +450,71 @@ fn hybrid(
             .map(String::from)
             .unwrap_or_else(|| "source".to_string());
         match module.source_lang {
-            SourceLang::C => c_sources.push((fname, contents.clone())),
-            SourceLang::Python => py_sources.push((fname, contents.clone())),
-            SourceLang::Shell => sh_sources.push((fname, contents.clone())),
+            SourceLang::C => out.c_sources.push((fname, contents.clone())),
+            SourceLang::Python => out.py_sources.push((fname, contents.clone())),
+            SourceLang::Shell => out.sh_sources.push((fname, contents.clone())),
             _ => {}
         }
-        modules.push(module);
+        out.modules.push(module);
     }
+    Ok(out)
+}
 
-    println!(
-        "xpile hybrid: {} module(s) dispatched from {}",
-        modules.len(),
-        path.display()
-    );
-    // PMAT-898: with the full module set in hand, rewrite each boundary's
-    // provisional `to_lang` (hardcoded C by the single-file frontend) to the
-    // language of the sibling that actually defines the symbol — so a relative
-    // import of a Python sibling becomes Python→Python (dropped by reconcile),
-    // not a false Python→C FFI boundary.
-    resolve_boundary_to_langs(&mut modules);
-    match FfiManifest::reconcile(&modules) {
-        Ok(manifest) => {
-            // PMAT-931: re-type the FFI call sites of reconciled `double`-
-            // returning C symbols in the calling (Python) module — the Python
-            // frontend lowered them with the unknown-callee I64 default before
-            // the C side was known, mis-rendering a whole double (`10` vs
-            // Python's `10.0`) and mistyping `let r: float` (rustc E0308).
-            retype_float_ffi_sites(&manifest, &mut modules);
-            if manifest.entries.is_empty() {
-                println!("  no cross-language FFI boundaries");
-            } else {
-                println!("  {} FFI boundary(ies) reconciled:", manifest.entries.len());
-                for e in &manifest.entries {
-                    println!(
-                        "    {} : {:?} → {:?}  [{}]",
-                        e.symbol, e.from_lang, e.to_lang, e.shim_id
-                    );
-                }
-            }
-            // PMAT-899 Phase 4: with `--emit-shims <path>`, lower the reconciled
-            // manifest to a self-contained Rust FFI shim file (per-paradigm: real
-            // `extern "C"` for C, `Command` for Shell; a mechanism-named gap for
-            // the rest). All-or-nothing — any unshimmable boundary fails loud, so
-            // a half-shimmed hybrid build never reaches disk.
-            if let Some(out_path) = emit_shims {
-                if manifest.entries.is_empty() {
-                    println!("  --emit-shims: no FFI boundaries — nothing to emit");
-                    return Ok(());
-                }
-                match manifest.emit_rust_shims(&modules) {
-                    Ok(src) => {
-                        std::fs::write(out_path, &src)
-                            .with_context(|| format!("writing shims to {}", out_path.display()))?;
-                        println!(
-                            "  emitted {} FFI shim(s) → {}",
-                            manifest.entries.len(),
-                            out_path.display()
-                        );
-                    }
-                    Err(err) => {
-                        eprintln!("xpile hybrid: shim emission FAILED");
-                        for u in &err.unsupported {
-                            eprintln!("    {u}");
-                        }
-                        bail!("{} unshimmable FFI boundary(ies)", err.unsupported.len());
-                    }
-                }
-            }
-            // PMAT-901 Phase 5a: with `--emit-workspace <dir>`, emit a buildable
-            // Cargo workspace — the C side as cc-compiled + linked objects, the
-            // non-C modules lowered to Rust, and the reconciled `extern "C"` shims
-            // wiring them together. `cargo build` it for the first executing
-            // hybrid artifact.
-            if let Some(ws_dir) = emit_workspace {
-                let rust_src = lower_hybrid_rust(session, &modules)?;
-                match manifest.emit_hybrid_workspace(&modules, &c_sources, &rust_src, ws_dir) {
-                    Ok(()) => println!(
-                        "  emitted hybrid workspace → {} (run `cargo build` to compile + link)",
-                        ws_dir.display()
-                    ),
-                    Err(err) => {
-                        eprintln!("xpile hybrid: workspace emission FAILED: {err}");
-                        bail!("hybrid workspace emit failed");
-                    }
-                }
-            }
-            // PMAT-902 NORTH STAR: `--verify` runs the executing differential.
-            if verify {
-                return verify_hybrid(
-                    session,
-                    &manifest,
-                    &modules,
-                    &c_sources,
-                    &py_sources,
-                    &sh_sources,
-                    repair,
-                );
-            }
+fn print_manifest(manifest: &FfiManifest) {
+    if manifest.entries.is_empty() {
+        println!("  no cross-language FFI boundaries");
+        return;
+    }
+    println!("  {} FFI boundary(ies) reconciled:", manifest.entries.len());
+    for e in &manifest.entries {
+        println!(
+            "    {} : {:?} → {:?}  [{}]",
+            e.symbol, e.from_lang, e.to_lang, e.shim_id
+        );
+    }
+}
+
+fn emit_shims_file(manifest: &FfiManifest, modules: &[Module], out_path: &Path) -> Result<()> {
+    match manifest.emit_rust_shims(modules) {
+        Ok(src) => {
+            std::fs::write(out_path, &src)
+                .with_context(|| format!("writing shims to {}", out_path.display()))?;
+            println!(
+                "  emitted {} FFI shim(s) → {}",
+                manifest.entries.len(),
+                out_path.display()
+            );
             Ok(())
         }
         Err(err) => {
-            eprintln!("xpile hybrid: FFI reconciliation FAILED");
-            for u in &err.unresolved {
+            eprintln!("xpile hybrid: shim emission FAILED");
+            for u in &err.unsupported {
                 eprintln!("    {u}");
             }
-            // Non-zero exit: an unresolved boundary blocks the hybrid build.
-            bail!("{} unresolved FFI boundary(ies)", err.unresolved.len())
+            bail!("{} unshimmable FFI boundary(ies)", err.unsupported.len());
+        }
+    }
+}
+
+fn emit_workspace_dir(
+    session: &TranspileSession,
+    manifest: &FfiManifest,
+    modules: &[Module],
+    c_sources: &[(String, String)],
+    ws_dir: &Path,
+) -> Result<()> {
+    let rust_src = lower_hybrid_rust(session, modules)?;
+    match manifest.emit_hybrid_workspace(modules, c_sources, &rust_src, ws_dir) {
+        Ok(()) => {
+            println!(
+                "  emitted hybrid workspace → {} (run `cargo build` to compile + link)",
+                ws_dir.display()
+            );
+            Ok(())
+        }
+        Err(err) => {
+            eprintln!("xpile hybrid: workspace emission FAILED: {err}");
+            bail!("hybrid workspace emit failed");
         }
     }
 }
@@ -695,19 +740,13 @@ fn verify_c_boundary(
     };
 
     // ctypes bindings for every C boundary; skip if any type isn't ABI-mappable.
-    let mut bindings = Vec::new();
-    for e in c_entries {
-        match ctypes_binding_for(e, modules) {
-            Some(b) => bindings.push(b),
-            None => {
-                println!(
-                    "  --verify: boundary `{}` has a non-ABI-mappable type — skipping",
-                    e.symbol
-                );
-                return Ok(());
-            }
+    let bindings = match ctypes_bindings(c_entries, modules) {
+        Ok(b) => b,
+        Err(symbol) => {
+            println!("  --verify: boundary `{symbol}` has a non-ABI-mappable type — skipping");
+            return Ok(());
         }
-    }
+    };
 
     // Phase 3 — capture the CPython reference (the C extension bound via ctypes).
     let reference = capture_cpython_hybrid_ref(py_source, c_sources, &bindings)
@@ -779,20 +818,36 @@ fn verify_c_boundary(
     // — there is no symptom in the artifact to repair, and a loop probing against
     // an empty reference would "converge" on any candidate that also prints
     // nothing, manufacturing exactly the false pass PMAT-1387 closed.
-    if repair && verdict.is_err() && !reference.is_empty() {
-        if let ComparisonResult::Divergence { .. } = diff_stdout(&reference, &actual) {
-            return repair_hybrid(
-                session,
-                manifest,
-                modules,
-                c_entries,
-                c_sources,
-                &reference,
-                "the CPython reference",
-            );
-        }
+    let diverged = || {
+        matches!(
+            diff_stdout(&reference, &actual),
+            ComparisonResult::Divergence { .. }
+        )
+    };
+    if repair && verdict.is_err() && !reference.is_empty() && diverged() {
+        return repair_hybrid(
+            session,
+            manifest,
+            modules,
+            c_entries,
+            c_sources,
+            &reference,
+            "the CPython reference",
+        );
     }
     verdict
+}
+
+/// The ctypes binding of every C boundary, or the symbol of the first one whose
+/// types are not ABI-mappable.
+fn ctypes_bindings(
+    c_entries: &[&FfiEntry],
+    modules: &[Module],
+) -> Result<Vec<CtypesBinding>, String> {
+    c_entries
+        .iter()
+        .map(|e| ctypes_binding_for(e, modules).ok_or_else(|| e.symbol.clone()))
+        .collect()
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -2129,80 +2184,7 @@ fn audit(session: &TranspileSession, path: &Path, target_str: &str, json: bool) 
         bail!("{}", audit_no_source_message(session, path));
     }
     for src in sources {
-        report.files_scanned += 1;
-        let contents = match std::fs::read_to_string(&src) {
-            Ok(s) => s,
-            Err(e) => {
-                report.parse_errors.push((src, format!("read failed: {e}")));
-                continue;
-            }
-        };
-        // PMAT-038: same `matches_path` dispatch as the transpile
-        // path. collect_source_files already filters by registered
-        // extensions, so this lookup is currently never `None` —
-        // but reaching for the trait method keeps the dispatch
-        // pattern uniform across the two CLI subcommands.
-        let Some(frontend) = session.frontends.iter().find(|f| f.matches_path(&src)) else {
-            continue;
-        };
-        let module = match frontend.parse_and_lower(&src, &contents) {
-            Ok(m) => m,
-            Err(e) => {
-                report
-                    .parse_errors
-                    .push((src.clone(), format!("parse_and_lower: {e}")));
-                continue;
-            }
-        };
-        let backend = session
-            .backends
-            .iter()
-            .find(|b| b.targets().contains(&target))
-            .expect("target validated above");
-        let config = BackendConfig {
-            emit_contracts: true,
-            target,
-            profile: Profile::RustOut,
-            hardware: None,
-        };
-        let artifact = match backend.lower(&module, &config) {
-            Ok(a) => a,
-            Err(e) => {
-                report
-                    .parse_errors
-                    .push((src.clone(), format!("backend: {e}")));
-                continue;
-            }
-        };
-        // Per-function audit: walk the Module's typed items, ask each
-        // function whether it requires a citation (via
-        // `Function::applicable_contracts()`), then check whether the
-        // emitted source actually has the citation immediately above
-        // the function's declaration. This is XPILE-FALSIFY-002's
-        // refinement — pre-002, the denominator was "every emitted
-        // function" which double-penalised comparison-only functions.
-        for item in &module.items {
-            // PMAT-502bj: only functions carry contract citations; skip consts.
-            let xpile_meta_hir::Item::Function(f) = item else {
-                continue;
-            };
-            let requires_citation = !f.applicable_contracts().is_empty();
-            let cited = function_has_citation(&artifact.primary, &f.name, target);
-            report.functions_emitted += 1;
-            match (requires_citation, cited) {
-                (true, true) => {
-                    report.functions_requiring_citation += 1;
-                    report.functions_with_citation += 1;
-                }
-                (true, false) => {
-                    report.functions_requiring_citation += 1;
-                }
-                (false, true) => {
-                    report.over_citations += 1;
-                }
-                (false, false) => {}
-            }
-        }
+        audit_file(session, src, target, &mut report);
     }
 
     if json {
@@ -2211,6 +2193,87 @@ fn audit(session: &TranspileSession, path: &Path, target_str: &str, json: bool) 
         print_audit_text(&report, target);
     }
     Ok(())
+}
+
+/// One corpus file's contribution to the F1 audit. Read, parse and backend
+/// failures are recorded in `report.parse_errors`; the file still counts as
+/// scanned.
+fn audit_file(session: &TranspileSession, src: PathBuf, target: Target, report: &mut AuditReport) {
+    report.files_scanned += 1;
+    let contents = match std::fs::read_to_string(&src) {
+        Ok(s) => s,
+        Err(e) => {
+            report.parse_errors.push((src, format!("read failed: {e}")));
+            return;
+        }
+    };
+    // PMAT-038: same `matches_path` dispatch as the transpile
+    // path. collect_source_files already filters by registered
+    // extensions, so this lookup is currently never `None` —
+    // but reaching for the trait method keeps the dispatch
+    // pattern uniform across the two CLI subcommands.
+    let Some(frontend) = session.frontends.iter().find(|f| f.matches_path(&src)) else {
+        return;
+    };
+    let module = match frontend.parse_and_lower(&src, &contents) {
+        Ok(m) => m,
+        Err(e) => {
+            report
+                .parse_errors
+                .push((src.clone(), format!("parse_and_lower: {e}")));
+            return;
+        }
+    };
+    let backend = session
+        .backends
+        .iter()
+        .find(|b| b.targets().contains(&target))
+        .expect("target validated above");
+    let config = BackendConfig {
+        emit_contracts: true,
+        target,
+        profile: Profile::RustOut,
+        hardware: None,
+    };
+    let artifact = match backend.lower(&module, &config) {
+        Ok(a) => a,
+        Err(e) => {
+            report
+                .parse_errors
+                .push((src.clone(), format!("backend: {e}")));
+            return;
+        }
+    };
+    // Per-function audit: walk the Module's typed items, ask each
+    // function whether it requires a citation (via
+    // `Function::applicable_contracts()`), then check whether the
+    // emitted source actually has the citation immediately above
+    // the function's declaration. This is XPILE-FALSIFY-002's
+    // refinement — pre-002, the denominator was "every emitted
+    // function" which double-penalised comparison-only functions.
+    for item in &module.items {
+        // PMAT-502bj: only functions carry contract citations; skip consts.
+        let xpile_meta_hir::Item::Function(f) = item else {
+            continue;
+        };
+        let requires_citation = !f.applicable_contracts().is_empty();
+        let cited = function_has_citation(&artifact.primary, &f.name, target);
+        report.functions_emitted += 1;
+        tally_citation(report, requires_citation, cited);
+    }
+}
+
+/// Count one emitted function by (requires a citation, carries one).
+fn tally_citation(report: &mut AuditReport, requires_citation: bool, cited: bool) {
+    match (requires_citation, cited) {
+        (true, true) => {
+            report.functions_requiring_citation += 1;
+            report.functions_with_citation += 1;
+        }
+        (true, false) => report.functions_requiring_citation += 1,
+        (false, true) => report.over_citations += 1,
+        (false, false) => {}
+    }
 }
 
 /// Walk `path` (file or directory) and return every source file whose
@@ -2291,43 +2354,41 @@ fn function_has_citation(source: &str, function_name: &str, target: Target) -> b
         Target::Lean => "/-- xpile-contract:",
         _ => return false,
     };
-    let needle = format!("{function_name}(");
-    let needle_space = format!("{function_name} (");
-
     let lines: Vec<&str> = source.lines().collect();
-    for (i, line) in lines.iter().enumerate() {
-        let stripped = line.trim_start();
-        let is_decl = prefixes.iter().any(|p| {
-            if !stripped.starts_with(p) {
-                return false;
-            }
-            // PMAT-1385: a Python/C name that collides with a Rust keyword is
-            // emitted as a RAW identifier (`def move` → `pub fn r#move`, and
-            // Ruchy does the same). Matching the bare name missed every such
-            // declaration, so the function was counted in the F1 denominator
-            // and never found in the numerator — the citation was emitted, the
-            // detector just could not see it. That is an under-count of the
-            // metric, i.e. the reporter reporting a number that is not true.
-            let rest = &stripped[p.len()..];
-            let rest = rest.strip_prefix("r#").unwrap_or(rest);
-            rest.starts_with(&needle) || rest.starts_with(&needle_space)
-        });
-        if !is_decl {
-            continue;
-        }
-        // Walk backward looking for the citation (or its absence).
-        let mut j = i;
-        while j > 0 {
-            j -= 1;
-            let prev = lines[j].trim();
-            if prev.is_empty() {
-                continue;
-            }
-            return prev.starts_with(citation_marker);
-        }
-        return false;
-    }
-    false
+    // The FIRST declaration decides; its nearest non-blank line above must be
+    // the citation (a declaration on line 1 has nothing above it: uncited).
+    lines
+        .iter()
+        .position(|line| declares_function(line, prefixes, function_name))
+        .is_some_and(|i| {
+            lines[..i]
+                .iter()
+                .rev()
+                .map(|l| l.trim())
+                .find(|l| !l.is_empty())
+                .is_some_and(|prev| prev.starts_with(citation_marker))
+        })
+}
+
+/// Does `line` declare `function_name` under one of the target's signature
+/// `prefixes`?
+fn declares_function(line: &str, prefixes: &[&str], function_name: &str) -> bool {
+    let stripped = line.trim_start();
+    prefixes.iter().any(|p| {
+        let Some(rest) = stripped.strip_prefix(p) else {
+            return false;
+        };
+        // PMAT-1385: a Python/C name that collides with a Rust keyword is
+        // emitted as a RAW identifier (`def move` → `pub fn r#move`, and
+        // Ruchy does the same). Matching the bare name missed every such
+        // declaration, so the function was counted in the F1 denominator
+        // and never found in the numerator — the citation was emitted, the
+        // detector just could not see it. That is an under-count of the
+        // metric, i.e. the reporter reporting a number that is not true.
+        let rest = rest.strip_prefix("r#").unwrap_or(rest);
+        rest.strip_prefix(function_name)
+            .is_some_and(|after| after.starts_with('(') || after.starts_with(" ("))
+    })
 }
 
 fn print_audit_text(report: &AuditReport, target: Target) {
@@ -2543,26 +2604,7 @@ enum CorpusSource {
 ///     corpus would be a wrong answer at exit 0.
 fn load_contract_corpus(contracts_dir: &Path) -> Result<(CorpusSource, Vec<(String, String)>)> {
     if contracts_dir.is_dir() {
-        let mut out: Vec<(String, String)> = Vec::new();
-        for entry in std::fs::read_dir(contracts_dir)? {
-            let entry = entry?;
-            let path = entry.path();
-            if !path.is_file() {
-                continue;
-            }
-            if path.extension().and_then(|s| s.to_str()) != Some("yaml") {
-                continue;
-            }
-            let Ok(contents) = std::fs::read_to_string(&path) else {
-                continue;
-            };
-            let Some(name) = path.file_name().and_then(|s| s.to_str()) else {
-                continue;
-            };
-            out.push((name.to_string(), contents));
-        }
-        out.sort_by(|a, b| a.0.cmp(&b.0));
-        return Ok((CorpusSource::Disk, out));
+        return Ok((CorpusSource::Disk, read_yaml_dir(contracts_dir)?));
     }
     if contracts_dir == Path::new(DEFAULT_CONTRACTS_DIR) {
         eprintln!(
@@ -2579,6 +2621,28 @@ fn load_contract_corpus(contracts_dir: &Path) -> Result<(CorpusSource, Vec<(Stri
         return Ok((CorpusSource::Embedded, out));
     }
     bail!("{} is not a directory", contracts_dir.display());
+}
+
+/// Every readable `*.yaml` file directly under `dir`, as `(file name,
+/// contents)`, sorted by name. Unreadable files and non-UTF-8 names are
+/// skipped; a directory-level I/O error propagates.
+fn read_yaml_dir(dir: &Path) -> Result<Vec<(String, String)>> {
+    let mut out: Vec<(String, String)> = Vec::new();
+    for entry in std::fs::read_dir(dir)? {
+        let path = entry?.path();
+        if !path.is_file() || path.extension().and_then(|s| s.to_str()) != Some("yaml") {
+            continue;
+        }
+        let (Ok(contents), Some(name)) = (
+            std::fs::read_to_string(&path),
+            path.file_name().and_then(|s| s.to_str()),
+        ) else {
+            continue;
+        };
+        out.push((name.to_string(), contents));
+    }
+    out.sort_by(|a, b| a.0.cmp(&b.0));
+    Ok(out)
 }
 
 /// The default value of `--roadmap` for `quorum` and `attestations`.
@@ -2638,27 +2702,29 @@ fn collect_contract_ids(contracts_dir: &Path) -> Result<Vec<String>> {
 /// `metadata:` block (must be at column 0), then look for the first
 /// `  id:` line within it. Returns `None` if missing or malformed.
 fn extract_metadata_id(contents: &str) -> Option<String> {
-    let mut in_metadata = false;
-    for line in contents.lines() {
+    let mut lines = contents.lines().skip_while(|l| !l.starts_with("metadata:"));
+    lines.next()?; // the `metadata:` line itself
+    for line in lines {
+        // A repeated `metadata:` line is skipped, not treated as the end.
         if line.starts_with("metadata:") {
-            in_metadata = true;
             continue;
         }
-        if in_metadata {
-            // End of metadata block when a new top-level key appears.
-            if !line.starts_with(' ') && !line.is_empty() && !line.starts_with('#') {
-                return None;
-            }
-            let trimmed = line.trim_start();
-            if let Some(rest) = trimmed.strip_prefix("id:") {
-                let raw = rest.trim().trim_matches('"').trim_matches('\'');
-                if !raw.is_empty() {
-                    return Some(raw.to_string());
-                }
-            }
+        // End of metadata block when a new top-level key appears.
+        if !line.starts_with(' ') && !line.is_empty() && !line.starts_with('#') {
+            return None;
+        }
+        if let Some(id) = metadata_id_value(line) {
+            return Some(id);
         }
     }
     None
+}
+
+/// The non-empty, quote-stripped value of an indented `id:` line.
+fn metadata_id_value(line: &str) -> Option<String> {
+    let rest = line.trim_start().strip_prefix("id:")?;
+    let raw = rest.trim().trim_matches('"').trim_matches('\'');
+    (!raw.is_empty()).then(|| raw.to_string())
 }
 
 /// Scan the roadmap text for occurrences of `id`. Each occurrence
