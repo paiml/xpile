@@ -1,65 +1,257 @@
 {
- "ticket": "PMAT-2138",
- "pr": 2140,
- "base": "main",
- "head": "2e4f36d27bd94976a3b4b627d2d21d47281366df",
- "agreed": true,
- "degraded": "same-family",
- "degraded_basis": "agy 429 on every family (a pre-checked round at e61edc30 went NO-VERDICT x3, kept outside the repo); Claude Code lanes per the operator's fallback rule. Lane 3 is claude-haiku-4-5, per the operator's 2026-09-24 rule relayed verbatim by the cop (one lane always a cheap Claude lane).",
- "author": {
-  "session": "xpile-74",
-  "model": "claude-opus-5-5",
-  "family": "claude"
- },
- "executor": "claude-sequential",
- "lanes": [
-  {
-   "lane": 1,
-   "model": "claude-sonnet-5",
-   "agent": "ab3d9f968645406f1",
-   "attempts": [
+  "ticket": "PMAT-2138",
+  "base": "ef6e1527^",
+  "base_resolved": "ef6e1527^",
+  "base_note": "no origin/ef6e1527^ exists; judged against the local ref",
+  "head": "ef6e1527cca536f9afbedeb243bc409bac498735",
+  "diff_sha256": "bf143a644cc2e23574deb088adb164be2b4c63739871741e695d4d0814f13f57",
+  "width": 2,
+  "executor": "agy",
+  "prompt_mode": "inline",
+  "prompt_bytes": 39556,
+  "author": {
+    "model": "claude-opus-5-5",
+    "family": "claude",
+    "source": "flag"
+  },
+  "agreed": false,
+  "lanes": [
     {
-     "judged": "132fead9-era",
-     "verdict": "FAIL",
-     "findings": [
-      "stale main.rs rustdoc contradicts hybrid_repair.rs (measured)",
-      "uint_adapter has no toolchain-free unit test (measured)"
-     ],
-     "applied": "a138a653 unit tests; main.rs doc in e61edc30 after #2143"
+      "lane": 1,
+      "status": "SUCCESS",
+      "verdict": "FAIL",
+      "summary": "The PR successfully implements the unsigned boundary bridge and resolves the inverted tripwire by introducing `hybrid_bool_arg` as the new convergence witness. However, the cleanup gate `repair_writes_nothing_and_leaves_no_workspace_behind` was weakened: it was modified to test a fail-closed repair (`hybrid_divergent`) instead of a converging repair. A converging repair (like the new `hybrid_bool_arg` witness) carries a higher risk of leaving behind mutations or probe workspaces, and should have been used to preserve the original strength of the gate.",
+      "findings": [
+        {
+          "claim": "The cleanup gate `repair_writes_nothing_and_leaves_no_workspace_behind` was weakened by changing its target from a converging repair to a failing repair (`hybrid_divergent`). A failed repair naturally abandons changes, whereas a successful repair is more likely to leave behind probe workspaces or unintended writes. Since a new convergence witness (`hybrid_bool_arg`) was introduced in this exact PR, the test should have been repointed to it to preserve coverage of successful repairs, rather than downgraded to test a fail-closed run.",
+          "file": "crates/xpile/tests/hybrid_repair.rs",
+          "grounding": "cited",
+          "line": 489
+        }
+      ],
+      "raw_bytes": 5650,
+      "err_bytes": 62,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.1-pro-high",
+      "model_measured": "gemini-3.1-pro-high",
+      "model_source": "measured",
+      "family": "gemini",
+      "role": "independent",
+      "fallback": {
+        "judged_by": "gemini-3.1-pro-high",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gemini-3.1-pro-high",
+            "family": "gemini",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
     },
     {
-     "judged": "e61edc30",
-     "verdict": "PASS"
-    }
-   ]
-  },
-  {
-   "lane": 2,
-   "model": "claude-sonnet-5",
-   "agent": "adaa80c0bd54a48f2",
-   "attempts": [
-    {
-     "judged": "e61edc30",
-     "verdict": "FAIL",
-     "findings": [
-      "'no wired repair rule has a reachable production symptom' is false: bump(True) -> E0308, --verify reports it, --repair fires ffi-arg-cast (measured)"
-     ],
-     "applied": "2e4f36d2: CUInt param impl Into<i64>; bool pinned in hybrid_unsigned; #2145 filed; hybrid_bool_arg is the convergence witness; the claim withdrawn everywhere"
+      "lane": 2,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff for PMAT-2138 fully satisfies its ticket requirements and acceptance criteria without doing anything forbidden or out of scope.\n\n1. Ticket & Acceptance Criteria Verification:\n- Acceptance criterion 1: `xpile hybrid --verify on hybrid_unsigned MATCHes CPython without --repair`.\n  Verified via test `unsigned_boundary_matches_cpython_without_repair` in `crates/xpile/tests/hybrid_repair.rs`: exits 0 and asserts exact byte-identical match `4\\n0\\n6\\n85\\n2` against CPython ctypes `c_uint` semantics (covering negative arguments, truncation mod 2^32, arithmetic on return values, and Python bool arguments).\n- Acceptance criterion 2: `hybrid_repair.rs inverted tripwire resolved per its own instruction, docs updated`.\n  Verified: `hybrid_repair.rs` asserted that when `hybrid_unsigned` was fixed at the source, the convergence witness must be re-pointed to an actual production-emitted E0308. The diff introduces `fixtures/hybrid_bool_arg` (#2145, Python bool passed to C int boundary) and re-points `repair_converges_on_a_production_emitted_e0308` and `verify_reports_the_bool_argument_build_failure` to it. All docstrings across `hybrid_repair.rs`, `main.rs`, and `app.py` were updated accordingly.\n- Acceptance criterion 3: `red arm with the adapter removed`.\n  Verified: If the `uint_adapter` is removed or returns `None`, `bump` falls back to the direct wrapper alias `use ffi_shims::bump_shim as bump;`. The Python call site lowers `bump(3i64)` into `u32`, triggering rustc E0308, which causes `unsigned_boundary_matches_cpython_without_repair` to fail.\n\n2. Scope & Gate Preservation:\n- No gates were weakened; all 51 unit tests in `xpile-ffi-manifest` pass, all 8 integration tests in `hybrid_repair.rs` pass, `qa_gate` passes, and roadmap/changelog validation tests (`roadmap_ledger_parses`, `ledger_integrity_witness`, `roadmap_pmat_schema`, `changelog_freshness`, `changelog_release_membership_witness`, `release_mandate_enforcement_witness`, `release_story_derivation_witness`) pass cleanly.\n- The adapter is strictly scoped: it only applies to Python callers of C functions where at least one parameter or return type is `Type::CUInt` and all other parameters are plain scalars (`Type::I64`, `Type::Bool`, `Type::F64`, or `Type::Unit` return). Unsupported types (`CULong`, non-scalars) are rejected by returning `None`, preserving existing semantics.\n\nVerdict: PASS.",
+      "findings": [],
+      "raw_bytes": 6120,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.8-flash-high",
+      "model_measured": "gemini-3.8-flash-high",
+      "model_source": "measured",
+      "family": "gemini",
+      "role": "independent",
+      "fallback": {
+        "judged_by": "gemini-3.8-flash-high",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gemini-3.8-flash-high",
+            "family": "gemini",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
     },
     {
-     "judged": "2e4f36d27bd94976a3b4b627d2d21d47281366df",
-     "verdict": "PASS",
-     "note": "remaining hole: a bool into a non-CUInt slot of a mixed signature, which is the disclosed scope (#2145)"
+      "lane": 3,
+      "model": "claude-haiku-4-5",
+      "model_source": "declared",
+      "family": "claude",
+      "agent": "claude-code-subagent",
+      "judged": "ef6e1527",
+      "verdict": "PASS",
+      "summary": "hybrid_unsigned MATCHes 4 0 6 85 2 (independent ctypes c_uint agrees), hybrid_bool_arg E0308 without --repair and converges in 1 iteration with it; hybrid_repair 8/8, uint_adapter tests pass (measured)",
+      "findings": []
     }
-   ]
+  ],
+  "dissent": [
+    {
+      "lane": 1,
+      "verdict": "FAIL",
+      "summary": "The PR successfully implements the unsigned boundary bridge and resolves the inverted tripwire by introducing `hybrid_bool_arg` as the new convergence witness. However, the cleanup gate `repair_writes_nothing_and_leaves_no_workspace_behind` was weakened: it was modified to test a fail-closed repair (`hybrid_divergent`) instead of a converging repair. A converging repair (like the new `hybrid_bool_arg` witness) carries a higher risk of leaving behind mutations or probe workspaces, and should have been used to preserve the original strength of the gate.",
+      "findings": [
+        {
+          "claim": "The cleanup gate `repair_writes_nothing_and_leaves_no_workspace_behind` was weakened by changing its target from a converging repair to a failing repair (`hybrid_divergent`). A failed repair naturally abandons changes, whereas a successful repair is more likely to leave behind probe workspaces or unintended writes. Since a new convergence witness (`hybrid_bool_arg`) was introduced in this exact PR, the test should have been repointed to it to preserve coverage of successful repairs, rather than downgraded to test a fail-closed run.",
+          "file": "crates/xpile/tests/hybrid_repair.rs",
+          "grounding": "cited",
+          "line": 489
+        }
+      ]
+    }
+  ],
+  "dedup": [
+    {
+      "file": "crates/xpile/tests/hybrid_repair.rs",
+      "line": 489,
+      "lanes_agreeing": [
+        1
+      ],
+      "claims": [
+        "The cleanup gate `repair_writes_nothing_and_leaves_no_workspace_behind` was weakened by changing its target from a converging repair to a failing repair (`hybrid_divergent`). A failed repair naturally abandons changes, whereas a successful repair is more likely to leave behind probe workspaces or unintended writes. Since a new convergence witness (`hybrid_bool_arg`) was introduced in this exact PR, the test should have been repointed to it to preserve coverage of successful repairs, rather than downgraded to test a fail-closed run."
+      ]
+    }
+  ],
+  "uncovered": [],
+  "coverage_source": "lanes",
+  "partial": true,
+  "partial_reasons": [
+    "lane 1: non-empty .err (62 bytes, 1 line(s) beyond agy-lane's workspace narration)"
+  ],
+  "fallback": {
+    "same_family_width": 1,
+    "chain": [
+      {
+        "model": "gemini-3.1-pro-high",
+        "family": "gemini",
+        "disposition": "configured"
+      },
+      {
+        "model": "gemini-3.8-flash-high",
+        "family": "gemini",
+        "disposition": "configured"
+      },
+      {
+        "model": "gpt-oss-120b-medium",
+        "family": "openai",
+        "disposition": "fallback"
+      },
+      {
+        "model": "qwen3.5",
+        "family": "qwen",
+        "disposition": "not-run",
+        "why": "no quorum.local_lane in the config — the aprender lane has no model to load"
+      },
+      {
+        "model": "claude-opus-4-6-thinking",
+        "family": "claude",
+        "disposition": "width",
+        "why": "same family as the author: at most 1 lane, recorded role width, counted toward no floor (R-15a)"
+      },
+      {
+        "model": "claude-sonnet-4-6",
+        "family": "claude",
+        "disposition": "width",
+        "why": "same family as the author: at most 1 lane, recorded role width, counted toward no floor (R-15a)"
+      }
+    ],
+    "precheck": [
+      {
+        "family": "gemini",
+        "model": "gemini-3.1-pro-high",
+        "probe": 1,
+        "outcome": "live"
+      }
+    ],
+    "prah": {
+      "source": "install-receipt",
+      "path": "/home/noah/.claude/skills/paiml-implement/bin/prah"
+    }
   },
-  {
-   "lane": 3,
-   "model": "claude-haiku-4-5",
-   "agent": "a54ee2a82dcb5f635",
-   "judged": "2e4f36d27bd94976a3b4b627d2d21d47281366df",
-   "verdict": "PASS",
-   "findings": []
+  "auto_merge": {
+    "checked": false,
+    "was_armed": false,
+    "disarmed": false,
+    "note": "no --pr given: nothing to disarm"
+  },
+  "lint": {
+    "ok": true,
+    "output": "receipt complete: kind=artifact lanes=2 author=claude-opus-5-5/claude"
+  },
+  "round": "post-merge, judged at merged main ef6e1527 (diff ef6e1527^..ef6e1527), per the cop ruling that the pre-merge round had mid-round-revised lanes",
+  "lane_mix": "2 agy + 1 claude-haiku-4-5 (rule in force when the round started)",
+  "outcome": "lane 1 FAIL (gate weakening, not a correctness defect) -> fix PR, no revert: the no-write witness and the no-write-posture assertion restored on a converging repair",
+  "pre_merge_round": {
+    "ticket": "PMAT-2138",
+    "pr": 2140,
+    "base": "main",
+    "head": "2e4f36d27bd94976a3b4b627d2d21d47281366df",
+    "agreed": true,
+    "degraded": "same-family",
+    "degraded_basis": "agy 429 on every family (a pre-checked round at e61edc30 went NO-VERDICT x3, kept outside the repo); Claude Code lanes per the operator's fallback rule. Lane 3 is claude-haiku-4-5, per the operator's 2026-09-24 rule relayed verbatim by the cop (one lane always a cheap Claude lane).",
+    "author": {
+      "session": "xpile-74",
+      "model": "claude-opus-5-5",
+      "family": "claude"
+    },
+    "executor": "claude-sequential",
+    "lanes": [
+      {
+        "lane": 1,
+        "model": "claude-sonnet-5",
+        "agent": "ab3d9f968645406f1",
+        "attempts": [
+          {
+            "judged": "132fead9-era",
+            "verdict": "FAIL",
+            "findings": [
+              "stale main.rs rustdoc contradicts hybrid_repair.rs (measured)",
+              "uint_adapter has no toolchain-free unit test (measured)"
+            ],
+            "applied": "a138a653 unit tests; main.rs doc in e61edc30 after #2143"
+          },
+          {
+            "judged": "e61edc30",
+            "verdict": "PASS"
+          }
+        ]
+      },
+      {
+        "lane": 2,
+        "model": "claude-sonnet-5",
+        "agent": "adaa80c0bd54a48f2",
+        "attempts": [
+          {
+            "judged": "e61edc30",
+            "verdict": "FAIL",
+            "findings": [
+              "'no wired repair rule has a reachable production symptom' is false: bump(True) -> E0308, --verify reports it, --repair fires ffi-arg-cast (measured)"
+            ],
+            "applied": "2e4f36d2: CUInt param impl Into<i64>; bool pinned in hybrid_unsigned; #2145 filed; hybrid_bool_arg is the convergence witness; the claim withdrawn everywhere"
+          },
+          {
+            "judged": "2e4f36d27bd94976a3b4b627d2d21d47281366df",
+            "verdict": "PASS",
+            "note": "remaining hole: a bool into a non-CUInt slot of a mixed signature, which is the disclosed scope (#2145)"
+          }
+        ]
+      },
+      {
+        "lane": 3,
+        "model": "claude-haiku-4-5",
+        "agent": "a54ee2a82dcb5f635",
+        "judged": "2e4f36d27bd94976a3b4b627d2d21d47281366df",
+        "verdict": "PASS",
+        "findings": []
+      }
+    ]
   }
- ]
 }

@@ -27240,4 +27240,4 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
   estimated_effort: null
   labels:
   - kind:code
-  notes: 'Epic #2124 (v0.1.619). Stacked on PR #2146 (PMAT-2139). The first criterion was first written here as "a scalar int C boundary", narrower than the issue; quorum round 1 read that and FAILed the double bridge as out of scope. Corrected to the issue''s own scope.'
+  notes: 'Epic #2124 (v0.1.619). Was stacked on PR #2146 (PMAT-2139, merged); retargeted to main. The first criterion was first written here as "a scalar int C boundary", narrower than the issue; quorum round 1 read that and FAILed the double bridge as out of scope. Corrected to the issue''s own scope.'

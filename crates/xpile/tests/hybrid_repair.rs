@@ -233,6 +233,13 @@ fn repair_converges_on_a_production_emitted_e0308() {
             && stderr.contains("expected `u64`, found `i64`"),
         "the original build failure must be reported in full before the repair:\n{stderr}"
     );
+    // The repair is REPORTED, not committed: stated in the output, asserted for
+    // real in `repair_writes_nothing_and_leaves_no_workspace_behind`. PMAT-2138
+    // dropped this assertion; the post-merge quorum restored it.
+    assert!(
+        stdout.contains("xpile wrote NOTHING to your tree"),
+        "the fail-closed no-write posture must be stated to the operator:\n{stdout}"
+    );
 }
 
 /// `--verify` on `hybrid_bool_arg` exits 0 with a MATCH, and no `--repair`.
@@ -501,11 +508,14 @@ fn repair_writes_nothing_and_leaves_no_workspace_behind() {
         eprintln!("cc/python3/cargo unavailable — skipping --repair no-write test");
         return;
     }
-    // PMAT-2138: this ran on `hybrid_unsigned`'s CONVERGING repair until that
-    // fixture stopped failing to build. The fail-closed run on `hybrid_divergent`
-    // still enters the loop and builds a probe workspace, which is all this
-    // witness needs: it is about what a run leaves behind, not how it ends.
-    let dir = fixture("hybrid_divergent");
+    // A CONVERGING run, on purpose: it is the one that holds a repaired
+    // candidate a write-back could commit, and it builds one probe per
+    // iteration on top of the initial one. PMAT-2138 briefly moved this to the
+    // fail-closed `hybrid_divergent` run (0 iterations, 1 probe, nothing
+    // repaired to write); the post-merge quorum refuted that as a weakening.
+    // It follows the convergence witness: `hybrid_bool_arg` until #2145 bridged
+    // the bool, `hybrid_ulong` (2 iterations, 3 probes) since.
+    let dir = fixture("hybrid_ulong");
     let snapshot = || -> Vec<(PathBuf, Vec<u8>)> {
         let mut v: Vec<(PathBuf, Vec<u8>)> = std::fs::read_dir(&dir)
             .expect("read fixture dir")
@@ -531,18 +541,14 @@ fn repair_writes_nothing_and_leaves_no_workspace_behind() {
     let _ = std::fs::remove_dir_all(&tmp);
     std::fs::create_dir_all(&tmp).expect("create the private TMPDIR");
 
-    let out = run_in("hybrid_divergent", true, Some(&tmp));
+    let out = run_in("hybrid_ulong", true, Some(&tmp));
     let stdout = String::from_utf8_lossy(&out.stdout);
-    let stderr = String::from_utf8_lossy(&out.stderr);
-    // The precondition is that the repair loop actually RAN, not merely that the
-    // run ended. A run that never entered the loop writes nothing for the
-    // trivial reason, so the loop's announcement and its fail-closed verdict are
-    // both required.
+    // The precondition is that a repair actually RAN and converged — not merely
+    // that the exit was 0. A green exit reached by skipping the boundary entirely
+    // would satisfy `success()` while writing nothing for the trivial reason.
     assert!(
-        !out.status.success()
-            && stdout.contains("--repair: bounded repair loop")
-            && stderr.contains("✗ NOT REPAIRED"),
-        "precondition: the repair loop must have run (and failed closed);\nstdout:\n{stdout}\nstderr:\n{stderr}"
+        out.status.success() && stdout.contains("✓ REPAIRED"),
+        "precondition: the repair loop must have run and converged;\nstdout:\n{stdout}"
     );
 
     assert_eq!(
@@ -556,12 +562,12 @@ fn repair_writes_nothing_and_leaves_no_workspace_behind() {
     // (1) NON-VACUITY: the cleanup claim is about workspaces that were really
     // built, and the count tracks the independently reported iteration count
     // (one probe of the initial candidate, then one per repair iteration).
-    let iterations: usize = stderr
-        .split("fail-closed after ")
+    let iterations: usize = stdout
+        .split("✓ REPAIRED in ")
         .nth(1)
         .and_then(|s| s.split_whitespace().next())
         .and_then(|s| s.parse().ok())
-        .unwrap_or_else(|| panic!("expected the iteration count in the verdict:\n{stderr}"));
+        .unwrap_or_else(|| panic!("expected the iteration count in the verdict:\n{stdout}"));
     assert!(
         built >= 1,
         "a run that built NO probe workspace proves nothing about cleaning them up:\n{stdout}"
