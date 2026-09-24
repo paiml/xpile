@@ -1,0 +1,75 @@
+{
+ "ticket": "PMAT-2151",
+ "pr": 2152,
+ "base": "origin/main",
+ "head": "1ac7926e9ef5a81beae9b42016c4b506c9cd6b4a",
+ "diff_sha256": "55140a825af2bad885be644f7ff878cef0e464a6c249bb04a61cb0f85419f9ef",
+ "brief_sha256": "2e3b12b78ffe3f2c9a26a1ad2e71f7a4474ef5e10570a97036d84f433ba1acdd",
+ "agreed": true,
+ "degraded": "same-family",
+ "degraded_basis": "agy pre-check 429 on gemini, openai and claude families at 3771f447 (round 0 NO-VERDICT, kept outside the repo); Claude Code lanes sonnet + haiku + sonnet per the operator's fallback rule; author is Opus, no lane uses the author's model.",
+ "author": {
+  "session": "xpile-3b60e5d7",
+  "model": "claude-opus-5-5",
+  "family": "claude"
+ },
+ "executor": "claude-sequential",
+ "lanes": [
+  {
+   "lane": 1,
+   "model": "claude-sonnet-5",
+   "family": "claude",
+   "agent": "af42fab6dd9e03d33",
+   "judged": "1ac7926e9ef5a81beae9b42016c4b506c9cd6b4a",
+   "verdict": "PASS",
+   "summary": "Fresh worktree build: proof_seam_witness 7, kani_harnesses 3, claims_drift 40 green; fmt/clippy clean. Ran cargo-kani on all 5 new harnesses: every baseline SUCCESSFUL, every planted mutant FAILED on the header's assertion. Witness floor and falsification-header gates mutated red.",
+   "findings": []
+  },
+  {
+   "lane": 2,
+   "model": "claude-haiku-4-5",
+   "family": "claude",
+   "agent": "ae731ebdbade002cd",
+   "judged": "1ac7926e9ef5a81beae9b42016c4b506c9cd6b4a",
+   "verdict": "PASS",
+   "summary": "Fresh worktree build, 50 tests green; floor 6->7 and kani-deps removal and header-strip each turn proof_seam_witness red; seams forward only; specs independent; 103/8/30 counts reproduce.",
+   "findings": []
+  },
+  {
+   "lane": 3,
+   "model": "claude-sonnet-5",
+   "family": "claude",
+   "agent": "a225732c9c503be74",
+   "judged": "1ac7926e9ef5a81beae9b42016c4b506c9cd6b4a",
+   "verdict": "PASS",
+   "summary": "Fresh worktree build; proof_seam_witness 7/7; cargo-kani on real_align8 and real_ffi_abi_slot SUCCESSFUL and FAILED on documented mutants; 30/103/8 counts reproduce; roadmap 'not landed' note matches the diff.",
+   "findings": [
+    {
+     "file": "contracts/kani/real_ffi_abi_slot.rs",
+     "claim": "'all 13' variants: Type has 19; Dict/List/Set/Tuple/Optional/Struct are not enumerated (today they share the wildcard None arm)",
+     "grounding": "measured",
+     "disposition": "non-blocking; follow-up issue, judged head kept"
+    },
+    {
+     "file": "crates/xpile-rust-codegen/src/lib.rs",
+     "claim": "#[doc(hidden)] pub proof_seams widen the published crates' reachable surface",
+     "grounding": "cited",
+     "disposition": "disclosed in CHANGELOG; non-blocking"
+    }
+   ]
+  }
+ ],
+ "previous_round": {
+  "head": "3771f4470febb3add3772aa1aa4f55dece55da85",
+  "diff_sha256": "00b9a79d69f9b6d33e828536d4a5b76703437188e45964c1674e98e24052df64",
+  "brief_sha256": "332f41067b2be11f651594fd1a9c6d3b7f26973d65602acf3fdb650d52cca1a6",
+  "lanes": [
+   {
+    "lane": 1,
+    "model": "claude-sonnet-5",
+    "verdict": "FAIL",
+    "finding": "CHANGELOG '8 of 109' / 'other 101' counted six //! prose mentions (measured); fixed in 1ac7926e to 8 of 103 / 95"
+   }
+  ]
+ }
+}
