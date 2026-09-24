@@ -6279,8 +6279,48 @@ fn emit_c_binop(
     Ok(())
 }
 
+/// PMAT-2151: scalar seams for the Kani proofs in `contracts/kani/` that verify
+/// THIS crate rather than a model of it (see `proof_seam_witness.rs`).
+///
+/// Each item forwards to the private fn the emitter itself calls, so a wrong
+/// edit to that fn turns its harness red. Not a public API.
+#[doc(hidden)]
+pub mod proof_seams {
+    use xpile_meta_hir::BinOp;
+
+    /// The C arithmetic widths a literal can be checked against.
+    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    pub enum CIntWidth {
+        I32,
+        I64,
+        U32,
+        U64,
+        F32,
+        F64,
+    }
+
+    /// [`super::c_int_lit_fits`] at the shipped width constant for `w`.
+    pub fn c_int_lit_fits(v: i64, w: CIntWidth) -> bool {
+        let w = match w {
+            CIntWidth::I32 => super::C_WIDTH_I32,
+            CIntWidth::I64 => super::C_WIDTH_I64,
+            CIntWidth::U32 => super::C_WIDTH_U32,
+            CIntWidth::U64 => super::C_WIDTH_U64,
+            CIntWidth::F32 => super::C_WIDTH_F32,
+            CIntWidth::F64 => super::C_WIDTH_F64,
+        };
+        super::c_int_lit_fits(v, w)
+    }
+
+    /// [`super::c_binop_is_modular`], unchanged.
+    pub fn c_binop_is_modular(op: BinOp) -> bool {
+        super::c_binop_is_modular(op)
+    }
+}
+
 #[cfg(test)]
 mod tests {
+
     use super::*;
     use xpile_meta_hir::{Module, SourceLang};
 

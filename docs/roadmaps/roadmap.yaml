@@ -27241,3 +27241,23 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
   labels:
   - kind:code
   notes: 'Epic #2124 (v0.1.619). Was stacked on PR #2146 (PMAT-2139, merged); retargeted to main. The first criterion was first written here as "a scalar int C boundary", narrower than the issue; quorum round 1 read that and FAILed the double bridge as out of scope. Corrected to the issue''s own scope.'
+- id: PMAT-2151
+  github_issue: 2151
+  item_type: task
+  title: "proofs: raise the Kani seam floor, ≥5 harnesses bound to shipped code (epic #2125 row 1)"
+  status: inprogress
+  priority: high
+  assigned_to: null
+  created: 2026-09-24T12:00:00Z
+  updated: 2026-09-24T12:00:00Z
+  spec: null
+  acceptance_criteria:
+  - at least 5 contracts/kani harness files declare kani-deps and call a shipped crates/*/src fn
+  - proof_seam_witness.rs pins the bound count as a floor derived from the tree, run red by dropping one harness's kani-deps
+  - each bound harness was run FAILED against a planted mutant of its shipped fn and records that mutant in its header
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'Epic #2125 (v0.1.620), row 1 of the grilled plan. The seams are scalar predicates, following the recipe PMAT-1512 measured (recursive Expr walks do not finish under Kani). depyler-frontend was skipped because it pulls in rustpython-parser; its flip_cmp is a candidate for a later raise. Landed 6 bound files (floor 6): the original plus c_int_lit_fits, c_binop_is_modular, align8, commutative_monoid_op and ffi_abi_slot. Tried and not landed: diff_stdout (xpile-oracle) and ptx_version_for, both past the 180 s harness timeout on symbolic String (CI or gx10 candidates); ptx capability grammar was never run.'
