@@ -13,6 +13,17 @@ not open a replacement, leaving no correct heading to write under; `v0.1.618` do
 contain them. Re-filed and gated by
 `crates/xpile/tests/changelog_release_membership_witness.rs` (PMAT-1496).
 
+### `crates/xpile/src/main.rs` can be committed again: six functions split below the pre-commit complexity gate, no behaviour change (PMAT-2141)
+
+The local pre-commit hook (cyclomatic 30, cognitive 25) refused every commit
+that staged `main.rs`, which had six functions over the limit (`hybrid` at
+cognitive 40 was the worst). No CLI change had landed since 2026-08-01, and a
+false rustdoc claim (#2140) was parked behind it. Each function is split into
+helpers, as verbatim moves or equivalent iterator forms. A 55-command CLI
+matrix, the `--emit-shims`/`--emit-workspace` trees and several error paths are
+byte-identical between the old and new binaries. The one branch not exercised,
+`emit_shims_file`'s unshimmable-boundary error, can't be reached from the C
+frontend today.
 ### A Python call into a C `unsigned int` now builds and matches CPython, and the repair loop lost its only real symptom (PMAT-2138)
 
 `xpile hybrid <dir> --emit-workspace` exited 0 emitting a workspace that did not
