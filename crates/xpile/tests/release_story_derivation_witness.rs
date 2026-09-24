@@ -121,17 +121,65 @@ fn prior_tag() -> String {
 
 /// Unique PMAT ids in `<prior>..HEAD`, exactly as §5's derivation computes them.
 fn ids_in_range() -> Vec<String> {
-    let log = git(&["log", &format!("{}..HEAD", prior_tag()), "--format=%s%n%b"]);
-    let mut ids: Vec<String> = log
-        .split(|c: char| !c.is_ascii_alphanumeric() && c != '-')
-        .filter(|t| {
-            t.starts_with("PMAT-") && t.len() > 5 && t[5..].bytes().all(|b| b.is_ascii_digit())
+    pmat_ids(&git(&[
+        "log",
+        &format!("{}..HEAD", prior_tag()),
+        "--format=%s%n%b",
+    ]))
+}
+
+/// Unique ids in `text` with `grep -oE 'PMAT-[0-9]+'` semantics: `PMAT-` then
+/// the longest run of digits, wherever it occurs, with no word boundary.
+///
+/// This used to split on characters other than alphanumerics and `-`, so
+/// `quorum-PMAT-2119.json` was ONE token and PMAT-2119 went uncounted while
+/// the plan's grep counted it. `main` went red on 2c370e21 for exactly that
+/// reason (xpile#2136).
+fn pmat_ids(text: &str) -> Vec<String> {
+    let mut ids: Vec<String> = text
+        .match_indices("PMAT-")
+        .filter_map(|(at, _)| {
+            let digits: String = text[at + 5..]
+                .chars()
+                .take_while(char::is_ascii_digit)
+                .collect();
+            (!digits.is_empty()).then(|| format!("PMAT-{digits}"))
         })
-        .map(str::to_string)
         .collect();
     ids.sort();
     ids.dedup();
     ids
+}
+
+#[test]
+fn pmat_ids_agrees_with_the_plans_grep_on_hyphenated_spellings() {
+    // Two spellings are real (`quorum-PMAT-2119.json` is the one that turned
+    // main red; `Refs PMAT-1516)` is the ordinary shape). The rest are
+    // SYNTHETIC edge cases of the same kind, not quotations: an id with a
+    // `-suffix`, an id glued to a preceding letter, `PMAT-` with no digits or a
+    // letter after it, and leading zeros. The expected set is what
+    // `grep -oE 'PMAT-[0-9]+'` prints for this text (measured).
+    let msg = "docs(audit): quorum-PMAT-2119.json\n\
+               branch PMAT-2120-done, Refs PMAT-1516)\n\
+               XPMAT-7 and PMAT- and PMAT-x and PMAT-0042.";
+    assert_eq!(
+        pmat_ids(msg),
+        ["PMAT-0042", "PMAT-1516", "PMAT-2119", "PMAT-2120", "PMAT-7"],
+        "pmat_ids must match grep -oE 'PMAT-[0-9]+' exactly, or the plan's \
+         derivation and this test's extraction can disagree over a range"
+    );
+    // The RED ARM, committed: the whole-token tokenizer `ids_in_range` used
+    // before xpile#2136 (still used, deliberately, by the roster rule as
+    // `bare_token_ids`) misses exactly the hyphen-joined spellings on this same
+    // message. If this ever passes, the message no longer exercises the defect.
+    let strict = bare_token_ids(msg);
+    for missed in ["PMAT-2119", "PMAT-2120", "PMAT-7"] {
+        assert!(
+            !strict.contains(&missed.to_string()),
+            "the constructed message no longer separates the two tokenizers: the \
+             strict one now finds {missed}, so this test would pass on the old code"
+        );
+    }
 }
 
 /// A count is a HISTORICAL REPORT when the same paragraph attributes it to an
@@ -273,11 +321,7 @@ fn the_active_plan_enumerates_no_arc_roster() {
         let numbered = line
             .split_once(". ")
             .is_some_and(|(n, _)| !n.is_empty() && n.chars().all(|c| c.is_ascii_digit()));
-        let bare_id = strip_code_spans(line)
-            .split(|c: char| !c.is_ascii_alphanumeric() && c != '-')
-            .any(|t| {
-                t.starts_with("PMAT-") && t.len() > 5 && t[5..].bytes().all(|b| b.is_ascii_digit())
-            });
+        let bare_id = !bare_token_ids(line).is_empty();
         if numbered && bare_id {
             run.push((idx + 1, line.to_string()));
         } else if !numbered {
@@ -294,17 +338,7 @@ fn the_active_plan_enumerates_no_arc_roster() {
     if worst.len() >= 3 {
         let stale: Vec<String> = worst
             .iter()
-            .flat_map(|(_, l)| {
-                strip_code_spans(l)
-                    .split(|c: char| !c.is_ascii_alphanumeric() && c != '-')
-                    .filter(|t| {
-                        t.starts_with("PMAT-")
-                            && t.len() > 5
-                            && t[5..].bytes().all(|b| b.is_ascii_digit())
-                    })
-                    .map(str::to_string)
-                    .collect::<Vec<_>>()
-            })
+            .flat_map(|(_, l)| bare_token_ids(l))
             .filter(|id| !in_range.contains(id))
             .collect();
         panic!(
@@ -325,6 +359,20 @@ fn the_active_plan_enumerates_no_arc_roster() {
             stale,
         );
     }
+}
+
+/// PMAT ids that stand as a whole token outside code spans, where a token is a
+/// run of alphanumerics and `-`. Deliberately stricter than [`pmat_ids`]: the
+/// roster rule asks whether a line CITES an id, and `quorum-PMAT-1.json` is a
+/// path, not a citation.
+fn bare_token_ids(line: &str) -> Vec<String> {
+    strip_code_spans(line)
+        .split(|c: char| !c.is_ascii_alphanumeric() && c != '-')
+        .filter(|t| {
+            t.starts_with("PMAT-") && t.len() > 5 && t[5..].bytes().all(|b| b.is_ascii_digit())
+        })
+        .map(str::to_string)
+        .collect()
 }
 
 fn strip_code_spans(line: &str) -> String {
