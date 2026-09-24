@@ -27162,6 +27162,25 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
   labels:
   - kind:code
   notes: 'Epic #2124 (v0.1.619).'
+- id: PMAT-2142
+  github_issue: 2142
+  item_type: bug
+  title: "changelog_release_membership_witness: ids_in_tag() misses hyphen-joined ids (the #2136 tokenizer)"
+  status: inprogress
+  priority: medium
+  assigned_to: null
+  created: 2026-09-24T07:10:00Z
+  updated: 2026-09-24T07:10:00Z
+  spec: null
+  acceptance_criteria:
+  - 'ids_in_tag counts ids with the same grep -oE PMAT-[0-9]+ semantics as changelog_freshness and release_story_derivation_witness'
+  - a constructed-message test with a committed red arm for the old tokenizer
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'Epic #2124 (v0.1.619). Found by quorum lane 3 on #2137.'
 - id: PMAT-2138
   github_issue: 2138
   item_type: bug
