@@ -3936,7 +3936,7 @@ roadmap:
   subtasks: []
   estimated_effort: null
   labels: []
-  notes: 'PMAT-985 update (2026-06-25): rank 3 on the forward_ev_ranking. v1 (proven predict + const weights, core-Lean only) is TRACTABLE but THIN; the load-bearing OLS-minimizer-uniqueness proof is MATHLIB-gated and xpile deliberately avoids Mathlib — so this needs an explicit STRATEGIC decision (carry a Mathlib lane vs. ship the thin v1 vs. defer) before any work starts. Do NOT drift into it as a reflexive slice.'
+  notes: 'Done: the arc landed 2026-07-04..06 and shipped in v0.1.616 (adc9da79, #1840). Receipts: 60450277 (#1812) --emit-crate universal .wasm; bf488fbf (#1814) Mathlib OLS-uniqueness certificate; a286f19c (#1824) general k-parameter OLS uniqueness; 141ca917 (#1825) C-OLS-MODEL-UNIQUENESS under pv; 4a46b0ef (#1827) citation emitted for fitted models; bc81fd68 (#1920) discrimination witness. Status was left at planned; corrected 2026-09-23 under epic #2124 ledger hygiene.'
 - id: PMAT-950
   github_issue: null
   item_type: task
@@ -9050,6 +9050,7 @@ roadmap:
   - "Diamond depth ratchet frozen at depth-13 (banner in sub/diamond-taxonomy.md); no depth-14+ broadening as default/background work."
   - "Ledger reconciled: forward priorities PMAT-466..469 tracked here; note recorded that PMAT-444..464 live only in git + CHANGELOG (canonical record per PMAT-001), not this ledger."
   - "PR #496 merges green."
+  notes: 'Cancelled 2026-09-23: superseded. Its goal (reprioritise the v0.2.0 roadmap by expected value) is now carried by the five tagged release epics #2124 (v0.1.619), #2125, #2126, #2127, #2128 (v0.2.0), each with done_when rows. Closed under the epic #2124 ledger-hygiene row.'
 - id: PMAT-466
   github_issue: null
   item_type: task
@@ -27080,4 +27081,4 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
   estimated_effort: null
   labels:
   - kind:code
-  notes: 'Milestone v0.1.619. Ledger-hygiene row: PR #2135.'
+  notes: 'Milestone v0.1.619. Its ledger-hygiene row reads: PMAT-465 (reprioritise v0.2.0) superseded by this plan; PMAT-956 marked planned but the arc is done; each row closed or re-statused with the sha that proves it. PR #2135 is that row.'
