@@ -1,0 +1,63 @@
+{
+ "ticket": "PMAT-2131",
+ "pr": 2132,
+ "base": "main",
+ "head": "23fa7984452bd1d7423e119de240373bb6283e32",
+ "diff_sha256": "09f7a09c0fd2be1f5b8204894e17cffd6fc7756605ad2b38e12a00fd4c17f58b",
+ "agreed": true,
+ "degraded": "same-family",
+ "degraded_basis": "Operator rule (~/.claude/CLAUDE.md, quorum fallback): agy measured quota-exhausted on every family 2026-09-23 (quorum-PMAT-2123 round 1), so lanes ran on Claude Code, same family as the author, marked degraded.",
+ "author": {
+  "session": "xpile-74",
+  "model": "claude-opus-5-5",
+  "family": "claude"
+ },
+ "executor": "claude-sequential",
+ "verdict": "lanes 1-2 PASS; lane 3 FAIL twice on doc-comment accuracy, both applied; lane 3 PASS at head",
+ "lanes": [
+  {
+   "lane": 1,
+   "model": "claude-sonnet-5",
+   "family": "claude",
+   "role": "degraded-same-family",
+   "judged": "5b7b5c04",
+   "verdict": "PASS",
+   "agent": "a7414b159edfc267d",
+   "findings": []
+  },
+  {
+   "lane": 2,
+   "model": "claude-sonnet-5",
+   "family": "claude",
+   "role": "degraded-same-family",
+   "judged": "5b7b5c04",
+   "verdict": "PASS",
+   "agent": "a5010acb2d6d26b3f",
+   "findings": []
+  },
+  {
+   "lane": 3,
+   "model": "claude-sonnet-5",
+   "family": "claude",
+   "role": "degraded-same-family",
+   "agent": "a18ff14c2ec2de91d",
+   "attempts": [
+    {
+     "judged": "5b7b5c04",
+     "verdict": "FAIL",
+     "finding": "DRIVER doc 'every construct ... transpiled since v0.1.0' false: .items() iteration shipped v0.1.56/57 (measured, CHANGELOG). APPLIED 16df331b."
+    },
+    {
+     "judged": "16df331b",
+     "verdict": "FAIL",
+     "finding": "replacement said main() 'calls each example once'; gcd is called twice (cited). APPLIED 23fa7984."
+    },
+    {
+     "judged": "23fa7984452bd1d7423e119de240373bb6283e32",
+     "verdict": "PASS"
+    }
+   ]
+  }
+ ],
+ "note": "The delta between 5b7b5c04 (lanes 1-2) and the head is two doc-comment edits in released_binary_crux.rs, both lane-3 findings; no code or test logic changed."
+}
