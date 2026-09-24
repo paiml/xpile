@@ -13,6 +13,25 @@ not open a replacement, leaving no correct heading to write under; `v0.1.618` do
 contain them. Re-filed and gated by
 `crates/xpile/tests/changelog_release_membership_witness.rs` (PMAT-1496).
 
+### `hybrid --verify` checks `float`, `unsigned long long` and `long long` boundaries instead of skipping them (PMAT-2139)
+
+`xpile hybrid --verify` printed "boundary … has a non-ABI-mappable type —
+skipping" and exited 0 for any C `float`, `unsigned long long` or `long long`
+boundary. For the first two, the workspace behind that skip did not compile
+(E0308): the same disclosed pass PMAT-1353 removed for `unsigned int`. Each now
+has its ctypes binding (`c_float`, `c_ulonglong`, `c_longlong`), probed against
+CPython:
+
+- `float` builds and MATCHes: the hybrid workspace bridges `f64 ↔ f32` exactly
+  as `c_float` does, and the PMAT-931 float retype now covers an `F32` return.
+  `twice(1.1)` prints `2.200000047683716` on both sides.
+- `unsigned long long` is REPORTED, exit non-zero. There is no lossless `i64`
+  bridge (ctypes returns ints above 2^63), so a loud build failure is the honest
+  answer. `--repair` converges on it, even for a result above `i64::MAX`, which
+  gives the repair loop a second real witness.
+- `long long` MATCHes. Its workspace always built; the skip only meant that
+  nothing compared its output.
+
 ### `crates/xpile/src/main.rs` can be committed again: six functions split below the pre-commit complexity gate, no behaviour change (PMAT-2141)
 
 The local pre-commit hook (cyclomatic 30, cognitive 25) refused every commit
@@ -47,8 +66,8 @@ declared the loop's domain empty instead; a quorum lane refuted it with
 `bump(True)`, which is how #2145 was found: a Python `bool` passed to a C `int`
 boundary still fails E0308 without `--repair`, and `--repair` converges on it.
 `fixtures/hybrid_bool_arg` is the new witness. The `float` and `unsigned long`
-E0308s are still hidden behind `--verify`'s "non-ABI-mappable" skip, which exits
-0 (#2139).
+E0308s were then still hidden behind `--verify`'s "non-ABI-mappable" skip; #2139,
+below, removed that skip.
 
 ### The rule that says "each declared screen family must still match something" named five of the eight, because the list was typed instead of derived (PMAT-1516)
 
