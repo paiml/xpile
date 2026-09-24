@@ -41,8 +41,9 @@ Each was run against a planted mutant of its shipped fn and went FAILED on the
 intended assertion, then SUCCESSFUL once restored. The mutant is recorded in the
 harness header. `proof_seam_witness.rs` gains a floor of 6 bound harness files,
 counted from the tree, and a check that every bound harness records its
-executed falsification. Both were run red. The other 101 `#[kani::proof]`
-functions under `contracts/kani/` still verify models (8 of 109 are bound).
+executed falsification. Both were run red. The other 95 `#[kani::proof]`
+functions under `contracts/kani/` still verify models (8 of 103 are bound,
+counted with comments stripped, as `claims_drift` counts them).
 
 The local pre-commit hook had been refusing any commit to the two codegen
 `lib.rs` files because of complexity debt already there (e.g. `emit_expr` at
