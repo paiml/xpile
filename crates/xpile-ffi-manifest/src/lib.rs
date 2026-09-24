@@ -433,14 +433,21 @@ impl FfiManifest {
         // and runs (the executing north-star artifact). `allow(unused_imports)`
         // keeps a `pass`-bodied `main()` (no boundary call) warning-free.
         let mut aliases = String::new();
+        let mut needs_c_double = false;
         for e in &self.entries {
             match scalar_adapter(e, modules) {
-                Some(adapter) => aliases.push_str(&adapter),
+                Some(adapter) => {
+                    needs_c_double |= adapter.contains(".c_double()");
+                    aliases.push_str(&adapter)
+                }
                 None => aliases.push_str(&format!(
                     "#[allow(unused_imports)]\nuse ffi_shims::{0}_shim as {0};\n",
                     e.symbol
                 )),
             }
+        }
+        if needs_c_double {
+            aliases.push_str(C_DOUBLE_TRAIT);
         }
         std::fs::write(
             out_dir.join("src").join("main.rs"),
@@ -470,12 +477,20 @@ impl FfiManifest {
 /// A CUInt parameter takes `impl Into<i64>`, so a Python `bool` argument
 /// (lowered as `true`, not `1i64`) is bridged too: `c_uint(True)` is 1.
 ///
-/// `None` (keep the alias) unless the caller is Python, the callee is C, at
-/// least one param or the return is `CUInt`, and every other type is a plain
-/// scalar (`I64`, `Bool`, `F64`, or a `Unit` return). Those other slots keep
-/// the wrapper's own type, so a `bool` passed into an `int` slot still fails
-/// E0308 exactly as it does through the plain alias (#2145); the adapter
-/// neither fixes nor worsens that.
+/// #2145 widened the bridge from the narrow slots to every scalar slot. An
+/// `int` or `long long` slot (`I64` / `CLong`) takes `impl Into<i64>` for the
+/// same bool reason (`c_int(True)` is 1); a `double` or `float` slot takes
+/// `impl IntoCDouble` ([`C_DOUBLE_TRAIT`]), because Python passes an int or a
+/// bool there too (`c_double(3)` is 3.0) and `f64` has no `From<i64>`. Before
+/// #2145, `f(True)` into an `int` slot, and `f(True)` or `f(3)` into a
+/// `double` slot, lowered to a call the wrapper's own type rejected (E0308)
+/// while `--emit-workspace` exited 0.
+///
+/// `None` (keep the alias) unless the caller is Python, the callee is C, every
+/// type is a plain scalar (`I64`, `CLong`, `Bool`, `F64`, `CUInt`, `F32`, or a
+/// `Unit` return), and at least one param or the return needs bridging. A
+/// `Bool` slot keeps the wrapper's own type (the C frontend does not lower
+/// `_Bool`, so nothing reaches it).
 ///
 /// #2139 added `F32` (C `float`): the caller passes and receives `f64`, and the
 /// adapter narrows with `as f32` and widens with `as f64`, which is what
@@ -491,15 +506,15 @@ fn scalar_adapter(entry: &FfiEntry, modules: &[Module]) -> Option<String> {
     let plain = |t: &Type| {
         matches!(
             t,
-            Type::I64 | Type::Bool | Type::F64 | Type::CUInt | Type::F32
+            Type::I64 | Type::CLong | Type::Bool | Type::F64 | Type::CUInt | Type::F32
         )
     };
     let ret_ok = f.return_type == Type::Unit || plain(&f.return_type);
     if !ret_ok || !f.params.iter().all(|p| plain(&p.ty)) {
         return None;
     }
-    let narrow = |t: &Type| matches!(t, Type::CUInt | Type::F32);
-    if !narrow(&f.return_type) && !f.params.iter().any(|p| narrow(&p.ty)) {
+    let narrow_ret = matches!(f.return_type, Type::CUInt | Type::F32);
+    if !narrow_ret && !f.params.iter().any(|p| p.ty != Type::Bool) {
         return None;
     }
     let params: Vec<String> = f
@@ -522,9 +537,9 @@ fn scalar_adapter(entry: &FfiEntry, modules: &[Module]) -> Option<String> {
         t => (format!(" -> {}", wrapper_native(t)), call),
     };
     Some(format!(
-        "// PMAT-2138 / #2139: `{sym}` crosses a narrow C scalar (`unsigned int` or\n\
-         // `float`); Python-lowered callers pass and expect i64 / f64, cast\n\
-         // exactly as ctypes' c_uint / c_float do.\n\
+        "// PMAT-2138 / #2139 / #2145: `{sym}` crosses a C scalar boundary;\n\
+         // Python-lowered callers pass an int, bool or float and expect i64 /\n\
+         // f64, converted exactly as the matching ctypes binding does.\n\
          #[allow(dead_code)]\n\
          fn {sym}({params}){ret} {{\n    {body}\n}}\n",
         sym = entry.symbol,
@@ -534,27 +549,63 @@ fn scalar_adapter(entry: &FfiEntry, modules: &[Module]) -> Option<String> {
 
 /// The type a Python-lowered caller passes for one adapter parameter.
 ///
-/// A CUInt slot takes `impl Into<i64>`, not `i64`: the Python frontend lowers
-/// an int argument as `3i64` but a bool argument as `true`, and ctypes'
-/// `c_uint(True)` is 1, which is exactly `i64::from(true)`. An F32 slot takes
-/// `f64`, Python's float. Every other slot keeps the wrapper's own type.
+/// An integer slot (`CUInt`, `I64`, `CLong`) takes `impl Into<i64>`, not
+/// `i64`: the Python frontend lowers an int argument as `3i64` but a bool
+/// argument as `true`, and ctypes' `c_uint(True)` / `c_int(True)` is 1,
+/// exactly `i64::from(true)`. A float slot (`F64`, `F32`) takes
+/// `impl IntoCDouble`, which accepts an int or a bool as well. A `Bool` slot
+/// keeps the wrapper's own type.
 fn caller_type(t: &Type) -> &'static str {
     match t {
-        Type::CUInt => "impl Into<i64>",
-        Type::F32 => "f64",
+        Type::CUInt | Type::I64 | Type::CLong => "impl Into<i64>",
+        Type::F64 | Type::F32 => "impl IntoCDouble",
         t => wrapper_native(t),
     }
 }
 
-/// The argument expression handed to the safe wrapper: narrowed exactly as
-/// ctypes narrows (`c_uint` truncates mod 2^32, `c_float` rounds to nearest).
+/// The argument expression handed to the safe wrapper: converted exactly as
+/// ctypes converts (`c_uint` truncates mod 2^32, `c_double` is `float(x)`,
+/// `c_float` then rounds that to nearest `f32`).
 fn narrow_arg(name: &str, t: &Type) -> String {
     match t {
         Type::CUInt => format!("{name}.into() as u32"),
-        Type::F32 => format!("{name} as f32"),
+        Type::I64 | Type::CLong => format!("{name}.into()"),
+        Type::F64 => format!("{name}.c_double()"),
+        Type::F32 => format!("{name}.c_double() as f32"),
         _ => name.to_string(),
     }
 }
+
+/// #2145: what a Python argument in a C `double` / `float` slot becomes.
+/// ctypes' `c_double(x)` is `float(x)`: a float is itself, an int rounds to
+/// nearest (`as f64` does too), and a bool is 0.0 or 1.0. `i32` is here
+/// because an unsuffixed integer literal falls back to it. Emitted once per
+/// hybrid workspace, and only when an adapter uses it.
+const C_DOUBLE_TRAIT: &str = "\
+trait IntoCDouble {
+    fn c_double(self) -> f64;
+}
+impl IntoCDouble for f64 {
+    fn c_double(self) -> f64 {
+        self
+    }
+}
+impl IntoCDouble for i64 {
+    fn c_double(self) -> f64 {
+        self as f64
+    }
+}
+impl IntoCDouble for i32 {
+    fn c_double(self) -> f64 {
+        f64::from(self)
+    }
+}
+impl IntoCDouble for bool {
+    fn c_double(self) -> f64 {
+        f64::from(u8::from(self))
+    }
+}
+";
 
 /// One emitted boundary's contribution to the shim file: an optional
 /// `extern "C"` foreign declaration (C boundaries only), the safe wrapper, and
@@ -3307,14 +3358,28 @@ mod tests {
     }
 
     #[test]
-    fn scalar_adapter_passes_other_scalars_through_at_the_wrappers_own_type() {
-        // CUInt + f64 params, signed int return: only the CUInt arg is cast,
-        // and a non-CUInt return gets no trailing cast.
+    fn scalar_adapter_bridges_every_scalar_slot_like_ctypes() {
+        // #2145: CUInt + double params, signed int return. Each slot converts
+        // as its ctypes binding does, and a non-narrow return gets no cast.
         let a = adapter_for(vec![("x", Type::CUInt), ("y", Type::F64)], Type::I64)
-            .expect("mixed boundary with one CUInt");
+            .expect("mixed CUInt + double boundary");
         assert!(
-            a.contains("fn f(a0: impl Into<i64>, a1: f64) -> i64 {\n    ffi_shims::f_shim(a0.into() as u32, a1)\n}"),
+            a.contains("fn f(a0: impl Into<i64>, a1: impl IntoCDouble) -> i64 {\n    ffi_shims::f_shim(a0.into() as u32, a1.c_double())\n}"),
             "{a}"
+        );
+        // int and long long slots take a bool too (`c_int(True)` is 1).
+        let i = adapter_for(vec![("x", Type::I64), ("y", Type::CLong)], Type::CLong)
+            .expect("signed int boundary");
+        assert!(
+            i.contains("fn f(a0: impl Into<i64>, a1: impl Into<i64>) -> i64 {\n    ffi_shims::f_shim(a0.into(), a1.into())\n}"),
+            "{i}"
+        );
+        // A Bool slot keeps the wrapper's own type next to a bridged one.
+        let b = adapter_for(vec![("x", Type::Bool), ("y", Type::F64)], Type::F64)
+            .expect("bool + double boundary");
+        assert!(
+            b.contains("fn f(a0: i64, a1: impl IntoCDouble) -> f64 {\n    ffi_shims::f_shim(a0, a1.c_double())\n}"),
+            "{b}"
         );
     }
 
@@ -3322,22 +3387,24 @@ mod tests {
     fn scalar_adapter_narrows_a_float_param_and_widens_its_return_like_ctypes_c_float() {
         let a = adapter_for(vec![("x", Type::F32)], Type::F32).expect("F32 boundary");
         assert!(
-            a.contains("fn f(a0: f64) -> f64 {\n    ffi_shims::f_shim(a0 as f32) as f64\n}"),
+            a.contains("fn f(a0: impl IntoCDouble) -> f64 {\n    ffi_shims::f_shim(a0.c_double() as f32) as f64\n}"),
             "{a}"
         );
         // Mixed with a CUInt: each narrow slot gets its own cast.
         let m = adapter_for(vec![("x", Type::CUInt), ("y", Type::F32)], Type::I64)
             .expect("CUInt + F32 boundary");
         assert!(
-            m.contains("fn f(a0: impl Into<i64>, a1: f64) -> i64 {\n    ffi_shims::f_shim(a0.into() as u32, a1 as f32)\n}"),
+            m.contains("fn f(a0: impl Into<i64>, a1: impl IntoCDouble) -> i64 {\n    ffi_shims::f_shim(a0.into() as u32, a1.c_double() as f32)\n}"),
             "{m}"
         );
     }
 
     #[test]
     fn scalar_adapter_declines_everything_it_does_not_model() {
-        // No CUInt at all: the plain alias is right.
-        assert_eq!(adapter_for(vec![("x", Type::I64)], Type::I64), None);
+        // Nothing to bridge: no params and a wide return, or only Bool slots.
+        assert_eq!(adapter_for(vec![], Type::I64), None);
+        assert_eq!(adapter_for(vec![], Type::F64), None);
+        assert_eq!(adapter_for(vec![("x", Type::Bool)], Type::I64), None);
         // CULong: u64 -> i64 is lossy above 2^63, where ctypes returns a larger int.
         assert_eq!(adapter_for(vec![("x", Type::CULong)], Type::CULong), None);
         assert_eq!(adapter_for(vec![("x", Type::CUInt)], Type::CULong), None);

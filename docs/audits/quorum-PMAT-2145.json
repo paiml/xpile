@@ -1,0 +1,172 @@
+{
+  "ticket": "PMAT-2145",
+  "base": "origin/main",
+  "base_resolved": "origin/main",
+  "base_note": "no origin/origin/main exists; judged against the local ref",
+  "head": "53b63e26ced7eefed2a74b1b767d330a22af1d22",
+  "diff_sha256": "7d798a8873b3985e66918d538da34e19299f39040f2253ac50c8eb89e2559fc4",
+  "width": 1,
+  "executor": "agy",
+  "prompt_mode": "inline",
+  "prompt_bytes": 36976,
+  "author": {
+    "model": "claude-opus-5-5",
+    "family": "claude",
+    "source": "flag"
+  },
+  "agreed": true,
+  "lanes": [
+    {
+      "lane": 1,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff accurately implements the acceptance criteria by bridging Python bool and int arguments to C scalar boundaries (I64, CLong, F64, F32) using `impl Into<i64>` and `impl IntoCDouble`. The tests correctly assert that the previously failing calls now pass `--verify` without repair, matching CPython's output byte-for-byte. The repair loop's convergence witness was correctly re-pointed to `hybrid_ulong`, which represents a remaining unbridged production symptom. All claims in the diff and ticket are fully backed by the implemented code and test updates.",
+      "findings": [],
+      "raw_bytes": 3027,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "model": "gemini-3.1-pro-high",
+      "model_measured": "gemini-3.1-pro-high",
+      "model_source": "measured",
+      "family": "gemini",
+      "role": "independent",
+      "fallback": {
+        "judged_by": "gemini-3.1-pro-high",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gemini-3.1-pro-high",
+            "family": "gemini",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    },
+    {
+      "lane": 2,
+      "model": "claude-sonnet-5",
+      "model_source": "declared",
+      "family": "claude",
+      "agent": "claude-code-subagent",
+      "judged": "53b63e26ced7eefed2a74b1b767d330a22af1d22",
+      "verdict": "PASS",
+      "summary": "Fresh build in its own target dir: hybrid_repair 8/8, xpile-ffi-manifest lib 52/52, hybrid_scalar_widths 4/4, related hybrid suites green, clippy/fmt clean. Emitted hybrid_bool_arg main.rs shows inc(a0: impl Into<i64>), half(a0: impl IntoCDouble) and exactly one IntoCDouble block. python3/ctypes cross-checks match (c_double(3)=3.0, c_double(True)=1.0, 2^53+1 -> 9007199254740992.0, c_int(True)=1, c_ulonglong above 2^63). The convergence witness runs on a genuine hybrid_ulong E0308; the no-write witness runs on a CONVERGING hybrid_ulong repair (built == iterations+1, fixture byte-identical). The bool test replacement is a strengthening. Scratch probes of bool->float and bool->long long also match CPython.",
+      "findings": [
+        {
+          "file": "crates/xpile-ffi-manifest/src/lib.rs",
+          "line": 598,
+          "claim": "the i32 IntoCDouble impl is justified by an unsuffixed-literal fallback, but emitted call sites carry explicit suffixes, so the impl is not reachable today",
+          "grounding": "measured",
+          "fix": "reword as defensive, or drop the i32 impl"
+        },
+        {
+          "file": "crates/xpile/tests/fixtures/hybrid_bool_arg/app.py",
+          "line": 24,
+          "claim": "criterion 1's long long and float slots have no executing bool-argument fixture (int and double do); covered only by unit tests and the lane's scratch probes",
+          "grounding": "cited",
+          "fix": "add a bool argument to hybrid_long or hybrid_float32 (or a new fixture)"
+        }
+      ]
+    },
+    {
+      "lane": 3,
+      "model": "claude-haiku-4-5",
+      "model_source": "declared",
+      "family": "claude",
+      "agent": "claude-code-subagent",
+      "judged": "53b63e26ced7eefed2a74b1b767d330a22af1d22",
+      "verdict": "PASS",
+      "summary": "Fresh build in its own target dir: 52 ffi-manifest + 8 hybrid_repair + 4 hybrid_scalar_widths pass, fmt/clippy clean; IntoCDouble follows ctypes; scalar_adapter/caller_type/narrow_arg handle every scalar slot; convergence witness re-pointed to hybrid_ulong; hybrid_bool_arg output 2\\n4\\n0.5\\n1.5\\n1.25 matches CPython.",
+      "findings": []
+    }
+  ],
+  "dissent": [],
+  "dedup": [],
+  "uncovered": [],
+  "coverage_source": "lanes",
+  "partial": false,
+  "partial_reasons": [
+    "lane 1: grounding NOT COMPARED — structured_output holds a verdict but no single verdict object could be read out of .response (3027 raw bytes), so agy's labels stand unchecked for this lane (PMAT-082)"
+  ],
+  "fallback": {
+    "same_family_width": 1,
+    "chain": [
+      {
+        "model": "gemini-3.1-pro-high",
+        "family": "gemini",
+        "disposition": "configured"
+      },
+      {
+        "model": "gpt-oss-120b-medium",
+        "family": "openai",
+        "disposition": "fallback"
+      },
+      {
+        "model": "qwen3.5",
+        "family": "qwen",
+        "disposition": "not-run",
+        "why": "no quorum.local_lane in the config — the aprender lane has no model to load"
+      },
+      {
+        "model": "claude-opus-4-6-thinking",
+        "family": "claude",
+        "disposition": "width",
+        "why": "same family as the author: at most 1 lane, recorded role width, counted toward no floor (R-15a)"
+      },
+      {
+        "model": "claude-sonnet-4-6",
+        "family": "claude",
+        "disposition": "width",
+        "why": "same family as the author: at most 1 lane, recorded role width, counted toward no floor (R-15a)"
+      }
+    ],
+    "precheck": [
+      {
+        "family": "gemini",
+        "model": "gemini-3.1-pro-high",
+        "probe": 1,
+        "outcome": "live"
+      }
+    ],
+    "prah": {
+      "source": "install-receipt",
+      "path": "/home/noah/.claude/skills/paiml-implement/bin/prah"
+    }
+  },
+  "auto_merge": {
+    "checked": true,
+    "was_armed": false,
+    "disarmed": false,
+    "note": "auto-merge not armed"
+  },
+  "lint": {
+    "ok": true,
+    "output": "receipt complete: kind=artifact lanes=1 author=claude-opus-5-5/claude"
+  },
+  "brief_sha256": "d4f2b2dd2781950f2ca1e1085003c3add3ed3f5103e22f11d4fce9cb1c28e905",
+  "lane_mix": "claude-sonnet-5 + 1 agy (gemini-3.1-pro-high, --width 1) + claude-haiku-4-5 (operator rule, 2026-09-24); all three judged the same brief (brief_sha256), diff_sha256 and head; every Claude lane built from the head into a fresh target dir",
+  "degraded": "same-family",
+  "round": 3,
+  "rounds_note": "Round 1 (275c779a) FAILed on the roadmap row's too-narrow scope. Round 2 (755c969a) agreed 3/3 while stacked on #2146. Round 3 re-judges after #2146 merged and main (with #2148) was merged in: the no-write witness moved to hybrid_ulong, changing judged lines.",
+  "previous_round": {
+    "head": "755c969a397b5c900e34960b65dfaf7ad923e793",
+    "brief_sha256": "a97479b215e99437b9cafaaa18cbeb9136c9fdc8f4d8497be3ab35963b4a6acd",
+    "diff_sha256": "945717e2ad0c502dcdace97ff9392491a67f194e27cc3e93787b0636fc419f72",
+    "lanes": [
+      {
+        "model": "gemini-3.1-pro-high",
+        "verdict": "PASS"
+      },
+      {
+        "model": "claude-sonnet-5",
+        "verdict": "PASS"
+      },
+      {
+        "model": "claude-haiku-4-5",
+        "verdict": "PASS"
+      }
+    ]
+  }
+}

@@ -1058,12 +1058,13 @@ impl RepairRule for RecordingRule {
 ///     class in the production seam. Its domain is empty here too.
 ///
 /// So one of three rules is wired through this seam, and it is not three.
-/// Its production witness moved in PMAT-2138: it converged on the unsigned call
-/// site in `fixtures/hybrid_unsigned` until that `E0308` was fixed at the
-/// source, and now converges on `fixtures/hybrid_bool_arg` (#2145), a Python
-/// `bool` passed to a C `int` boundary. Since #2139 an `unsigned long long`
-/// boundary is reachable too (`fixtures/hybrid_ulong`): `--verify` now builds
-/// it instead of skipping it, and the loop converges on its E0308.
+/// Its production witness has moved twice, each time because the `E0308` it
+/// converged on was fixed at the source: `fixtures/hybrid_unsigned` until
+/// PMAT-2138, `fixtures/hybrid_bool_arg` until #2145 bridged every signed-int,
+/// unsigned-int, float and double slot. It now converges on
+/// `fixtures/hybrid_ulong`, a C `unsigned long long` boundary, which no adapter
+/// bridges because `u64 → i64` is lossy above 2^63 (#2139 made `--verify` build
+/// it instead of skipping it).
 ///
 /// The `abi` field carries the WRAPPER's native type ([`wrapper_native`]), not
 /// the C ABI type: the candidate is the `main.rs` body, whose `f(..)` call

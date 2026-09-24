@@ -13,6 +13,33 @@ not open a replacement, leaving no correct heading to write under; `v0.1.618` do
 contain them. Re-filed and gated by
 `crates/xpile/tests/changelog_release_membership_witness.rs` (PMAT-1496).
 
+### A Python `bool` or `int` argument into a C `int`, `long long`, `float` or `double` boundary builds and matches CPython (PMAT-2145)
+
+The Python frontend lowers a boundary call before the C side is known, so
+`inc(True)` became `inc(true)` and `half(3)` became `half(3i64)`, while the safe
+wrappers take `i64` and `f64`. Both failed E0308 under `--verify`, and
+`--emit-workspace` exited 0 emitting them. The issue named the bool-into-`int`
+case; measuring found the `double` slot was worse, since it also rejected a plain
+Python int (`c_double(3)` is 3.0 in CPython).
+
+The hybrid workspace's adapter (PMAT-2138, #2139) now covers every scalar slot.
+An `int` or `long long` slot takes `impl Into<i64>`. A `double` or `float` slot
+takes `impl IntoCDouble`, a local trait emitted only when an adapter uses it,
+that converts as ctypes' `c_double` does: a float is itself, an int rounds to
+nearest (a probe passing `2^53 + 1` into a `double` slot prints
+`9007199254740992.0` on both sides), and a bool is 0.0 or 1.0. `hybrid_bool_arg` now pins
+each argument kind into each slot kind under plain `--verify`
+(`2 4 0.5 1.5 1.25`, byte-identical), and is in the `--repair` inertness list.
+
+That fixture was the repair loop's convergence witness, so the tripwire in
+`hybrid_repair.rs` fired as it instructs. The witness moved to `hybrid_ulong`:
+a C `unsigned long long` boundary, which no adapter bridges because `u64 → i64`
+is lossy above 2^63. `--repair` converges on it in 2 iterations, and that is the
+only production symptom in the rule's domain this file knows of. The no-write
+witness (`repair_writes_nothing_and_leaves_no_workspace_behind`) follows it, so
+it still runs on a converging repair. A `_Bool`
+parameter is not covered: the C frontend does not lower `_Bool`.
+
 ### `hybrid --verify` checks `float`, `unsigned long long` and `long long` boundaries instead of skipping them (PMAT-2139)
 
 `xpile hybrid --verify` printed "boundary … has a non-ABI-mappable type —

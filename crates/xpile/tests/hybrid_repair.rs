@@ -14,12 +14,15 @@
 //! 1. **It CONVERGES on a symptom the emitter really produces**
 //!    ([`repair_converges_on_a_production_emitted_e0308`]). A repair loop that
 //!    has only ever been observed to fix an INJECTED defect is indistinguishable
-//!    from one that cannot fix anything. `fixtures/hybrid_bool_arg` carries a
-//!    real, still-open `E0308` (#2145): a Python `bool` passed to a C `int`
-//!    boundary lowers as `inc(true)` into the `i64` wrapper. `--repair` casts the
-//!    call site and the artifact then agrees with CPython. Until PMAT-2138 the
-//!    witness was `hybrid_unsigned`, whose E0308 is now fixed at the source
-//!    ([`unsigned_boundary_matches_cpython_without_repair`]).
+//!    from one that cannot fix anything. `fixtures/hybrid_ulong` carries a
+//!    real `E0308` that no adapter can remove: a Python call into a C
+//!    `unsigned long long` boundary lowers as `big(7i64)` into the `u64`
+//!    wrapper, and there is no lossless `i64` bridge (ctypes returns ints above
+//!    2^63). `--repair` casts both call sites and the artifact then agrees with
+//!    CPython, even above `i64::MAX`. The witness was `hybrid_unsigned` until
+//!    PMAT-2138 and `hybrid_bool_arg` until #2145; both E0308s are now fixed at
+//!    the source ([`unsigned_boundary_matches_cpython_without_repair`],
+//!    [`bool_and_int_arguments_match_cpython_without_repair`]).
 //!
 //! 2. **It FAILS CLOSED when no rule applies**
 //!    ([`repair_fails_closed_when_no_rule_applies`]). `fixtures/hybrid_divergent`
@@ -53,11 +56,10 @@
 //! domains here.
 //!
 //! `FfiArgCastRepair`'s reachable domain today is a call-site argument whose
-//! lowered type differs from the wrapper's scalar type and which `--verify`
-//! actually builds: `hybrid_bool_arg` (#2145) is one, and since #2139 so is an
-//! `unsigned long long` boundary (`hybrid_ulong`, which `--verify` now builds
-//! and reports instead of skipping; `--repair` converges on it, see
-//! `hybrid_scalar_widths.rs`).
+//! lowered type differs from the wrapper's scalar type and which no hybrid
+//! adapter bridges. Since #2145 bridged every signed-int, unsigned-int, float
+//! and double slot, that is an `unsigned long long` boundary (`hybrid_ulong`)
+//! and nothing else this file knows of.
 //!
 //! ## The inverted tripwire fired, and was resolved as it instructed
 //!
@@ -66,8 +68,10 @@
 //! whatever `E0308` the emitter then produces. PMAT-2138 retyped it. A first
 //! draft of that change recorded the domain as EMPTY; a quorum lane refuted that
 //! with `bump(True)`, which led to `hybrid_bool_arg`. The witness now points
-//! there, and the same instruction holds for it: the day a bool argument to an
-//! int boundary builds without repair, re-point again.
+//! there. #2145 then bridged the bool, so the tripwire fired a second time and
+//! the witness moved to `hybrid_ulong`, under the same instruction: the day an
+//! `unsigned long long` call site builds without repair, re-point again, or
+//! record the domain as empty if nothing is left.
 //!
 //! Gated on cc + python3 + cargo so a constrained runner skips gracefully.
 
@@ -188,22 +192,22 @@ fn unsigned_boundary_matches_cpython_without_repair() {
     );
 }
 
-/// `--verify --repair` on `hybrid_bool_arg` exits 0 and prints the converged
-/// rule chain: the loop's CONVERGENCE witness since PMAT-2138 (#2145).
+/// `--verify --repair` on `hybrid_ulong` exits 0 and prints the converged
+/// rule chain: the loop's CONVERGENCE witness since #2145.
 ///
-/// A Python `bool` passed to a C `int` boundary lowers as `inc(true)` into the
-/// `i64` wrapper, so the emitted workspace fails E0308, and `FfiArgCastRepair`
-/// casts the call site. Non-vacuity is asserted the same three ways the
-/// `hybrid_unsigned` version of this test did: the boundary reconciled, the
-/// loop started with a derived rule set, and the E0308 was reported in full
-/// before the hand-off.
+/// A Python call into a C `unsigned long long` boundary lowers as `big(7i64)`
+/// into the `u64` wrapper, so the emitted workspace fails E0308 at both call
+/// sites, and `FfiArgCastRepair` casts one per iteration. Non-vacuity is
+/// asserted the same three ways the earlier witnesses were: the boundary
+/// reconciled, the loop started with a derived rule set, and the E0308 was
+/// reported in full before the hand-off.
 #[test]
 fn repair_converges_on_a_production_emitted_e0308() {
     if !toolchain() {
         eprintln!("cc/python3/cargo unavailable — skipping hybrid --repair convergence test");
         return;
     }
-    let out = run("hybrid_bool_arg", true);
+    let out = run("hybrid_ulong", true);
     let stdout = String::from_utf8_lossy(&out.stdout);
     let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(
@@ -211,7 +215,9 @@ fn repair_converges_on_a_production_emitted_e0308() {
         "--verify --repair must exit 0 once the loop converges;\nstdout:\n{stdout}\nstderr:\n{stderr}"
     );
     assert!(
-        stdout.contains("✓ REPAIRED in 1 iteration(s) — applied rule chain: [\"ffi-arg-cast\"]"),
+        stdout.contains(
+            "✓ REPAIRED in 2 iteration(s) — applied rule chain: [\"ffi-arg-cast\", \"ffi-arg-cast\"]"
+        ),
         "expected the converged verdict with its rule chain:\n{stdout}"
     );
     assert!(
@@ -219,11 +225,12 @@ fn repair_converges_on_a_production_emitted_e0308() {
         "the loop must announce the rules DERIVED from the manifest:\n{stdout}"
     );
     assert!(
-        stdout.contains("inc : Python → C"),
+        stdout.contains("big : Python → C"),
         "the FFI boundary must still reconcile:\n{stdout}"
     );
     assert!(
-        stderr.contains("hybrid artifact failed to build") && stderr.contains("error[E0308]"),
+        stderr.contains("hybrid artifact failed to build")
+            && stderr.contains("expected `u64`, found `i64`"),
         "the original build failure must be reported in full before the repair:\n{stderr}"
     );
     // The repair is REPORTED, not committed: stated in the output, asserted for
@@ -235,11 +242,16 @@ fn repair_converges_on_a_production_emitted_e0308() {
     );
 }
 
-/// WITHOUT `--repair`, `hybrid_bool_arg` exits NON-ZERO naming the E0308, and
-/// the direction of the mismatch is pinned so an unrelated build failure
-/// cannot keep this green.
+/// `--verify` on `hybrid_bool_arg` exits 0 with a MATCH, and no `--repair`.
+///
+/// Until #2145 a bool into an `int` slot (`inc(true)`) and an int into a
+/// `double` slot (`half(3i64)`) failed E0308, and this fixture was the
+/// convergence witness above. The adapters now convert each argument as ctypes
+/// does; the MATCH pins every argument kind into every slot kind, and the
+/// negative assertion stops the build failure from coming back behind a
+/// passing `--repair`.
 #[test]
-fn verify_reports_the_bool_argument_build_failure() {
+fn bool_and_int_arguments_match_cpython_without_repair() {
     if !toolchain() {
         eprintln!("cc/python3/cargo unavailable — skipping bool-argument --verify test");
         return;
@@ -248,16 +260,17 @@ fn verify_reports_the_bool_argument_build_failure() {
     let stdout = String::from_utf8_lossy(&out.stdout);
     let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(
-        !out.status.success(),
-        "`--verify` on an uncompilable workspace must exit NON-ZERO;\nstdout:\n{stdout}\nstderr:\n{stderr}"
+        out.status.success(),
+        "`--verify` on hybrid_bool_arg must exit 0;\nstdout:\n{stdout}\nstderr:\n{stderr}"
+    );
+    // CPython through ctypes' c_int / c_double, measured.
+    assert!(
+        stdout.contains(r#"✓ MATCH — stdout byte-identical (5 line(s)): "2\n4\n0.5\n1.5\n1.25""#),
+        "expected CPython's exact output:\n{stdout}"
     );
     assert!(
-        !stdout.contains("non-ABI-mappable"),
-        "an int boundary must be checked, not skipped:\n{stdout}"
-    );
-    assert!(
-        stderr.contains("expected `i64`, found `bool`"),
-        "the build failure must be the bool-into-int call site specifically:\n{stderr}"
+        !stderr.contains("failed to build"),
+        "the emitted workspace must compile:\n{stderr}"
     );
 }
 
@@ -357,6 +370,7 @@ fn repair_off_is_byte_identical_to_plain_verify() {
         "hybrid_dot2",
         "hybrid_pysibling",
         "hybrid_unsigned",
+        "hybrid_bool_arg",
     ] {
         let plain = run(name, false);
         let with_repair = run(name, true);
@@ -499,8 +513,9 @@ fn repair_writes_nothing_and_leaves_no_workspace_behind() {
     // iteration on top of the initial one. PMAT-2138 briefly moved this to the
     // fail-closed `hybrid_divergent` run (0 iterations, 1 probe, nothing
     // repaired to write); the post-merge quorum refuted that as a weakening.
-    // It follows the convergence witness, `hybrid_bool_arg`.
-    let dir = fixture("hybrid_bool_arg");
+    // It follows the convergence witness: `hybrid_bool_arg` until #2145 bridged
+    // the bool, `hybrid_ulong` (2 iterations, 3 probes) since.
+    let dir = fixture("hybrid_ulong");
     let snapshot = || -> Vec<(PathBuf, Vec<u8>)> {
         let mut v: Vec<(PathBuf, Vec<u8>)> = std::fs::read_dir(&dir)
             .expect("read fixture dir")
@@ -526,7 +541,7 @@ fn repair_writes_nothing_and_leaves_no_workspace_behind() {
     let _ = std::fs::remove_dir_all(&tmp);
     std::fs::create_dir_all(&tmp).expect("create the private TMPDIR");
 
-    let out = run_in("hybrid_bool_arg", true, Some(&tmp));
+    let out = run_in("hybrid_ulong", true, Some(&tmp));
     let stdout = String::from_utf8_lossy(&out.stdout);
     // The precondition is that a repair actually RAN and converged — not merely
     // that the exit was 0. A green exit reached by skipping the boundary entirely
