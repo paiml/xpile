@@ -557,7 +557,8 @@ fn tool_available(tool: &str) -> bool {
 }
 
 /// Meta-HIR type → `ctypes` type name, matching the FFI shim's C-ABI mapping
-/// (`I64`/`Bool` → `c_int`, `F64` → `c_double`, `CUInt` → `c_uint`). `None` for
+/// (`I64`/`Bool` → `c_int`, `F64` → `c_double`, `F32` → `c_float`, `CUInt` →
+/// `c_uint`, `CULong` → `c_ulonglong`, `CLong` → `c_longlong`). `None` for
 /// non-ABI types.
 ///
 /// **PMAT-1353 added `CUInt`, and it removed a false green.** `Type::CUInt` (a C
@@ -578,14 +579,27 @@ fn tool_available(tool: &str) -> bool {
 /// with an `impl Into<i64>` adapter), so it now MATCHes CPython under plain
 /// `--verify`.
 ///
-/// `CULong`, `CLong`, `F32` and `Ptr` stay refused — each needs its own probed
-/// binding decision, and an unprobed guess here would re-create exactly the
-/// false green this comment describes.
+/// **#2139 added `F32`, `CULong` and `CLong`, each probed against ctypes.** All
+/// three were skipped here as "non-ABI-mappable" while `--verify` exited 0, and
+/// for `float` and `unsigned long` the `--emit-workspace` behind that skip did
+/// not even compile (E0308): the same disclosed pass PMAT-1353 removed for
+/// `CUInt`. The bindings are the ones the shim already speaks (`c_float`,
+/// `c_ulonglong`, `c_longlong`). `float` builds and matches through the
+/// hybrid workspace's `f64 ↔ f32` adapter. `unsigned long` has no lossless
+/// `i64` bridge (ctypes returns ints above 2^63), so it is now CHECKED and
+/// reported as the build failure it is, rather than skipped.
+///
+/// `Ptr` stays refused: a pointer needs its own probed binding decision, and an
+/// unprobed guess here would re-create exactly the false green this comment
+/// describes.
 fn ctypes_name(ty: &Type) -> Option<&'static str> {
     match ty {
         Type::I64 | Type::Bool => Some("c_int"),
         Type::F64 => Some("c_double"),
+        Type::F32 => Some("c_float"),
         Type::CUInt => Some("c_uint"),
+        Type::CULong => Some("c_ulonglong"),
+        Type::CLong => Some("c_longlong"),
         _ => None,
     }
 }
@@ -1047,9 +1061,9 @@ impl RepairRule for RecordingRule {
 /// Its production witness moved in PMAT-2138: it converged on the unsigned call
 /// site in `fixtures/hybrid_unsigned` until that `E0308` was fixed at the
 /// source, and now converges on `fixtures/hybrid_bool_arg` (#2145), a Python
-/// `bool` passed to a C `int` boundary. The `float` and `unsigned long` E0308s
-/// (#2139) are not reachable: `--verify` skips those boundaries as
-/// non-ABI-mappable, so the loop is never entered on them.
+/// `bool` passed to a C `int` boundary. Since #2139 an `unsigned long long`
+/// boundary is reachable too (`fixtures/hybrid_ulong`): `--verify` now builds
+/// it instead of skipping it, and the loop converges on its E0308.
 ///
 /// The `abi` field carries the WRAPPER's native type ([`wrapper_native`]), not
 /// the C ABI type: the candidate is the `main.rs` body, whose `f(..)` call

@@ -27201,3 +27201,23 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
   labels:
   - kind:code
   notes: 'Epic #2124 (v0.1.619); the PMAT-1353 deferral.'
+- id: PMAT-2139
+  github_issue: 2139
+  item_type: bug
+  title: "hybrid --verify skips float and unsigned long boundaries as non-ABI-mappable at exit 0, while --emit-workspace emits code that fails E0308"
+  status: inprogress
+  priority: high
+  assigned_to: null
+  created: 2026-09-24T10:00:00Z
+  updated: 2026-09-24T10:00:00Z
+  spec: null
+  acceptance_criteria:
+  - float builds and matches CPython under plain --verify
+  - unsigned long long is checked and reported, not skipped
+  - a red arm per type
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'Epic #2124 (v0.1.619). Stacked on PR #2140 (PMAT-2138).'

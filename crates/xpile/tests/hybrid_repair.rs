@@ -54,9 +54,10 @@
 //!
 //! `FfiArgCastRepair`'s reachable domain today is a call-site argument whose
 //! lowered type differs from the wrapper's scalar type and which `--verify`
-//! actually builds: `hybrid_bool_arg` (#2145) is one. The E0308s for `float` and
-//! `unsigned long` boundaries (#2139) are NOT reachable, because `--verify`
-//! skips those boundaries as "non-ABI-mappable" and exits 0.
+//! actually builds: `hybrid_bool_arg` (#2145) is one, and since #2139 so is an
+//! `unsigned long long` boundary (`hybrid_ulong`, which `--verify` now builds
+//! and reports instead of skipping; `--repair` converges on it, see
+//! `hybrid_scalar_widths.rs`).
 //!
 //! ## The inverted tripwire fired, and was resolved as it instructed
 //!
