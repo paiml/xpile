@@ -14,12 +14,12 @@
 //! 1. **It CONVERGES on a symptom the emitter really produces**
 //!    ([`repair_converges_on_a_production_emitted_e0308`]). A repair loop that
 //!    has only ever been observed to fix an INJECTED defect is indistinguishable
-//!    from one that cannot fix anything. `fixtures/hybrid_unsigned` carries a
-//!    real, still-open `E0308`: the Python frontend lowers the boundary call with
-//!    its unknown-callee `i64` default (`bump(3i64)`) while `emit_c_shim`'s
-//!    PMAT-918 wrapper takes `u32`, so the emitted workspace does not compile.
-//!    `--repair` inserts the missing call-site cast and the artifact then agrees
-//!    with CPython.
+//!    from one that cannot fix anything. `fixtures/hybrid_bool_arg` carries a
+//!    real, still-open `E0308` (#2145): a Python `bool` passed to a C `int`
+//!    boundary lowers as `inc(true)` into the `i64` wrapper. `--repair` casts the
+//!    call site and the artifact then agrees with CPython. Until PMAT-2138 the
+//!    witness was `hybrid_unsigned`, whose E0308 is now fixed at the source
+//!    ([`unsigned_boundary_matches_cpython_without_repair`]).
 //!
 //! 2. **It FAILS CLOSED when no rule applies**
 //!    ([`repair_fails_closed_when_no_rule_applies`]). `fixtures/hybrid_divergent`
@@ -46,24 +46,27 @@
 //! ## Honest scope — read before quoting "the repair loop is wired"
 //!
 //! ONE of `xpile-agent`'s three rules is reachable through this seam, and
-//! `main.rs::boundary_repair_rules` documents why for each:
-//! `FfiReturnCastRepair` targets `__r` in `src/ffi_shims.rs`, which the probe
-//! REGENERATES from the manifest every iteration, so its text cannot occur in the
-//! candidate; `FloatReprRepair` targets a plain `println!("{}", <float>)`, which
-//! this emitter — measured, not assumed — no longer produces, because PMAT-931
-//! fixed that class in the production seam. Both have provably empty domains
-//! here. Wiring them anyway would inflate a capability count with rules that can
-//! never fire.
+//! `main.rs::boundary_repair_rules` documents why for each: `FfiReturnCastRepair`
+//! targets `__r` in `src/ffi_shims.rs`, which the probe REGENERATES every
+//! iteration, and `FloatReprRepair` targets a plain `println!("{}", <float>)`,
+//! which PMAT-931 stopped this emitter producing. Both have provably empty
+//! domains here.
 //!
-//! ## Inverted tripwire — deliberate, and here is the instruction
+//! `FfiArgCastRepair`'s reachable domain today is a call-site argument whose
+//! lowered type differs from the wrapper's scalar type and which `--verify`
+//! actually builds: `hybrid_bool_arg` (#2145) is one. The E0308s for `float` and
+//! `unsigned long` boundaries (#2139) are NOT reachable, because `--verify`
+//! skips those boundaries as "non-ABI-mappable" and exits 0.
 //!
-//! `hybrid_unsigned` is asserted to FAIL TO BUILD. The day the Python frontend
-//! retypes unsigned call sites the way `retype_float_ffi_sites` retypes float
-//! ones, that fixture compiles, and properties 1 and the `--verify` half of this
-//! file go RED. That is correct and it is the prompt to act: re-point the repair
-//! witness at whatever `E0308` the emitter then produces, or — if none remains —
-//! record that `FfiArgCastRepair`'s domain has become empty too and say so in the
-//! docs instead of keeping a green that no longer means anything.
+//! ## The inverted tripwire fired, and was resolved as it instructed
+//!
+//! This file asserted `hybrid_unsigned` FAILS TO BUILD, with the instruction:
+//! the day the unsigned call site is retyped, re-point the repair witness at
+//! whatever `E0308` the emitter then produces. PMAT-2138 retyped it. A first
+//! draft of that change recorded the domain as EMPTY; a quorum lane refuted that
+//! with `bump(True)`, which led to `hybrid_bool_arg`. The witness now points
+//! there, and the same instruction holds for it: the day a bool argument to an
+//! int boundary builds without repair, re-point again.
 //!
 //! Gated on cc + python3 + cargo so a constrained runner skips gracefully.
 
@@ -134,76 +137,26 @@ fn probe_disclosure(stdout: &str) -> (usize, PathBuf, String) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 1. CONVERGENCE on a production-emitted symptom.
+// 1. The unsigned boundary that USED to be the convergence witness now MATCHES.
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// `--verify --repair` on `hybrid_unsigned` exits 0 and prints the converged rule
-/// chain. NON-VACUITY is asserted three ways, because each one alone could pass
-/// for the wrong reason: the boundary must have reconciled (else this is a
-/// reconcile failure wearing a repair failure's clothes), the loop must have
-/// STARTED (else "exit 0" could just mean nothing was attempted), and the E0308
-/// it repaired must appear on stderr (else the loop might have converged on some
-/// other symptom entirely).
-#[test]
-fn repair_converges_on_a_production_emitted_e0308() {
-    if !toolchain() {
-        eprintln!("cc/python3/cargo unavailable — skipping hybrid --repair convergence test");
-        return;
-    }
-    let out = run("hybrid_unsigned", true);
-    let stdout = String::from_utf8_lossy(&out.stdout);
-    let stderr = String::from_utf8_lossy(&out.stderr);
-
-    assert!(
-        out.status.success(),
-        "--verify --repair must exit 0 once the loop converges;\nstdout:\n{stdout}\nstderr:\n{stderr}"
-    );
-    assert!(
-        stdout.contains("✓ REPAIRED in 1 iteration(s)"),
-        "expected the converged verdict with its iteration count:\n{stdout}"
-    );
-    assert!(
-        stdout.contains("applied rule chain: [\"ffi-arg-cast\"]"),
-        "the applied rule CHAIN must be printed — an iteration count alone does not \
-         say WHICH deterministic rule fired:\n{stdout}"
-    );
-    // NON-VACUITY (a): the loop was really entered, with a derived rule set.
-    assert!(
-        stdout.contains("--repair: bounded repair loop — 1 rule(s) [\"ffi-arg-cast\"]"),
-        "the loop must announce the rules DERIVED from the manifest:\n{stdout}"
-    );
-    // NON-VACUITY (b): the boundary reconciled, so this is a build failure being
-    // repaired, not a reconcile failure being skipped past.
-    assert!(
-        stdout.contains("bump : Python → C"),
-        "the FFI boundary must still reconcile:\n{stdout}"
-    );
-    // NON-VACUITY (c): the symptom repaired is the REAL E0308, printed before the
-    // hand-off. Without this the test would pass if `--repair` converged on some
-    // unrelated symptom.
-    assert!(
-        stderr.contains("hybrid artifact failed to build") && stderr.contains("error[E0308]"),
-        "the original build failure must still be reported in full before the repair:\n{stderr}"
-    );
-    // The repair is REPORTED, not committed — stated in the output, asserted for
-    // real in `repair_writes_nothing_and_leaves_no_workspace_behind`.
-    assert!(
-        stdout.contains("xpile wrote NOTHING to your tree"),
-        "the fail-closed no-write posture must be stated to the operator:\n{stdout}"
-    );
-}
-
-/// The other half of the same finding: WITHOUT `--repair`, `hybrid_unsigned`
-/// exits NON-ZERO naming the `E0308`.
+/// `--verify` on `hybrid_unsigned` exits 0 with a MATCH, and no `--repair`.
 ///
-/// This is the assertion that a disclosed skip was standing in front of a broken
-/// emit. Until PMAT-1353 `ctypes_name` had no `CUInt` arm, so this fixture
-/// printed `boundary `bump` has a non-ABI-mappable type — skipping` and exited
-/// **0** — while `--emit-workspace` on the same fixture emitted a workspace that
-/// does not compile. The negative assertion below is the load-bearing one: it
-/// pins that the skip is GONE, not merely that a failure now happens.
+/// Until PMAT-2138 this fixture failed to build (E0308: the call site lowered
+/// `bump(3i64)` into the PMAT-918 `u32` wrapper), and `--repair` converging on
+/// that failure was this file's proof that the loop could fix a symptom the
+/// emitter really produces. The hybrid workspace now bridges a CUInt boundary
+/// with an `i64` adapter that casts exactly as ctypes' `c_uint` does, so the
+/// inverted tripwire this file installed fired as intended and was resolved per
+/// its own instruction (see the module docs).
+///
+/// Each assertion is here for a reason. The MATCH line pins all five outputs,
+/// including the ones where the casts could differ from CPython (a negative
+/// argument and one above 2^32 truncate mod 2^32; a result used in arithmetic
+/// must arrive as an int). The negative assertions stop the old skip or the old
+/// build failure from coming back behind a green exit.
 #[test]
-fn verify_reports_the_unsigned_build_failure_instead_of_skipping_it() {
+fn unsigned_boundary_matches_cpython_without_repair() {
     if !toolchain() {
         eprintln!("cc/python3/cargo unavailable — skipping unsigned --verify test");
         return;
@@ -213,25 +166,90 @@ fn verify_reports_the_unsigned_build_failure_instead_of_skipping_it() {
     let stderr = String::from_utf8_lossy(&out.stderr);
 
     assert!(
-        !out.status.success(),
-        "`--verify` on a fixture whose emitted workspace does not compile must exit \
-         NON-ZERO;\nstdout:\n{stdout}\nstderr:\n{stderr}"
+        out.status.success(),
+        "`--verify` on hybrid_unsigned must exit 0;\nstdout:\n{stdout}\nstderr:\n{stderr}"
+    );
+    assert!(
+        stdout.contains(r#"✓ MATCH — stdout byte-identical (5 line(s)): "4\n0\n6\n85\n2""#),
+        "expected CPython's exact output, wraparound and bool cases included:\n{stdout}"
+    );
+    assert!(
+        stdout.contains("bump : Python → C"),
+        "the FFI boundary must still reconcile:\n{stdout}"
     );
     assert!(
         !stdout.contains("non-ABI-mappable"),
-        "the CUInt boundary must no longer be skipped as non-ABI-mappable — that skip \
-         was a disclosed PASS in front of an uncompilable emit:\n{stdout}"
+        "the CUInt boundary must be CHECKED, not skipped (PMAT-1353):\n{stdout}"
+    );
+    assert!(
+        !stderr.contains("failed to build"),
+        "the emitted workspace must compile:\n{stderr}"
+    );
+}
+
+/// `--verify --repair` on `hybrid_bool_arg` exits 0 and prints the converged
+/// rule chain: the loop's CONVERGENCE witness since PMAT-2138 (#2145).
+///
+/// A Python `bool` passed to a C `int` boundary lowers as `inc(true)` into the
+/// `i64` wrapper, so the emitted workspace fails E0308, and `FfiArgCastRepair`
+/// casts the call site. Non-vacuity is asserted the same three ways the
+/// `hybrid_unsigned` version of this test did: the boundary reconciled, the
+/// loop started with a derived rule set, and the E0308 was reported in full
+/// before the hand-off.
+#[test]
+fn repair_converges_on_a_production_emitted_e0308() {
+    if !toolchain() {
+        eprintln!("cc/python3/cargo unavailable — skipping hybrid --repair convergence test");
+        return;
+    }
+    let out = run("hybrid_bool_arg", true);
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        out.status.success(),
+        "--verify --repair must exit 0 once the loop converges;\nstdout:\n{stdout}\nstderr:\n{stderr}"
+    );
+    assert!(
+        stdout.contains("✓ REPAIRED in 1 iteration(s) — applied rule chain: [\"ffi-arg-cast\"]"),
+        "expected the converged verdict with its rule chain:\n{stdout}"
+    );
+    assert!(
+        stdout.contains("--repair: bounded repair loop — 1 rule(s) [\"ffi-arg-cast\"]"),
+        "the loop must announce the rules DERIVED from the manifest:\n{stdout}"
+    );
+    assert!(
+        stdout.contains("inc : Python → C"),
+        "the FFI boundary must still reconcile:\n{stdout}"
     );
     assert!(
         stderr.contains("hybrid artifact failed to build") && stderr.contains("error[E0308]"),
-        "expected the real E0308 the skip used to hide:\n{stderr}"
+        "the original build failure must be reported in full before the repair:\n{stderr}"
     );
-    // Pin the DIRECTION of the mismatch, so a future change that makes the build
-    // fail for an unrelated reason cannot keep this test green.
+}
+
+/// WITHOUT `--repair`, `hybrid_bool_arg` exits NON-ZERO naming the E0308, and
+/// the direction of the mismatch is pinned so an unrelated build failure
+/// cannot keep this green.
+#[test]
+fn verify_reports_the_bool_argument_build_failure() {
+    if !toolchain() {
+        eprintln!("cc/python3/cargo unavailable — skipping bool-argument --verify test");
+        return;
+    }
+    let out = run("hybrid_bool_arg", false);
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(
-        stderr.contains("expected `u32`, found `i64`"),
-        "the build failure must be the unsigned call-site retype hole specifically \
-         (wrapper takes u32, call site lowered i64):\n{stderr}"
+        !out.status.success(),
+        "`--verify` on an uncompilable workspace must exit NON-ZERO;\nstdout:\n{stdout}\nstderr:\n{stderr}"
+    );
+    assert!(
+        !stdout.contains("non-ABI-mappable"),
+        "an int boundary must be checked, not skipped:\n{stdout}"
+    );
+    assert!(
+        stderr.contains("expected `i64`, found `bool`"),
+        "the build failure must be the bool-into-int call site specifically:\n{stderr}"
     );
 }
 
@@ -330,6 +348,7 @@ fn repair_off_is_byte_identical_to_plain_verify() {
         "hybrid_scale2",
         "hybrid_dot2",
         "hybrid_pysibling",
+        "hybrid_unsigned",
     ] {
         let plain = run(name, false);
         let with_repair = run(name, true);
@@ -467,7 +486,11 @@ fn repair_writes_nothing_and_leaves_no_workspace_behind() {
         eprintln!("cc/python3/cargo unavailable — skipping --repair no-write test");
         return;
     }
-    let dir = fixture("hybrid_unsigned");
+    // PMAT-2138: this ran on `hybrid_unsigned`'s CONVERGING repair until that
+    // fixture stopped failing to build. The fail-closed run on `hybrid_divergent`
+    // still enters the loop and builds a probe workspace, which is all this
+    // witness needs: it is about what a run leaves behind, not how it ends.
+    let dir = fixture("hybrid_divergent");
     let snapshot = || -> Vec<(PathBuf, Vec<u8>)> {
         let mut v: Vec<(PathBuf, Vec<u8>)> = std::fs::read_dir(&dir)
             .expect("read fixture dir")
@@ -493,14 +516,18 @@ fn repair_writes_nothing_and_leaves_no_workspace_behind() {
     let _ = std::fs::remove_dir_all(&tmp);
     std::fs::create_dir_all(&tmp).expect("create the private TMPDIR");
 
-    let out = run_in("hybrid_unsigned", true, Some(&tmp));
+    let out = run_in("hybrid_divergent", true, Some(&tmp));
     let stdout = String::from_utf8_lossy(&out.stdout);
-    // The precondition is that a repair actually RAN and converged — not merely
-    // that the exit was 0. A green exit reached by skipping the boundary entirely
-    // would satisfy `success()` while writing nothing for the trivial reason.
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    // The precondition is that the repair loop actually RAN, not merely that the
+    // run ended. A run that never entered the loop writes nothing for the
+    // trivial reason, so the loop's announcement and its fail-closed verdict are
+    // both required.
     assert!(
-        out.status.success() && stdout.contains("✓ REPAIRED"),
-        "precondition: the repair loop must have run and converged;\nstdout:\n{stdout}"
+        !out.status.success()
+            && stdout.contains("--repair: bounded repair loop")
+            && stderr.contains("✗ NOT REPAIRED"),
+        "precondition: the repair loop must have run (and failed closed);\nstdout:\n{stdout}\nstderr:\n{stderr}"
     );
 
     assert_eq!(
@@ -514,12 +541,12 @@ fn repair_writes_nothing_and_leaves_no_workspace_behind() {
     // (1) NON-VACUITY: the cleanup claim is about workspaces that were really
     // built, and the count tracks the independently reported iteration count
     // (one probe of the initial candidate, then one per repair iteration).
-    let iterations: usize = stdout
-        .split("✓ REPAIRED in ")
+    let iterations: usize = stderr
+        .split("fail-closed after ")
         .nth(1)
         .and_then(|s| s.split_whitespace().next())
         .and_then(|s| s.parse().ok())
-        .unwrap_or_else(|| panic!("expected the iteration count in the verdict:\n{stdout}"));
+        .unwrap_or_else(|| panic!("expected the iteration count in the verdict:\n{stderr}"));
     assert!(
         built >= 1,
         "a run that built NO probe workspace proves nothing about cleaning them up:\n{stdout}"

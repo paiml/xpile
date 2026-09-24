@@ -434,10 +434,13 @@ impl FfiManifest {
         // keeps a `pass`-bodied `main()` (no boundary call) warning-free.
         let mut aliases = String::new();
         for e in &self.entries {
-            aliases.push_str(&format!(
-                "#[allow(unused_imports)]\nuse ffi_shims::{0}_shim as {0};\n",
-                e.symbol
-            ));
+            match uint_adapter(e, modules) {
+                Some(adapter) => aliases.push_str(&adapter),
+                None => aliases.push_str(&format!(
+                    "#[allow(unused_imports)]\nuse ffi_shims::{0}_shim as {0};\n",
+                    e.symbol
+                )),
+            }
         }
         std::fs::write(
             out_dir.join("src").join("main.rs"),
@@ -445,6 +448,91 @@ impl FfiManifest {
         )?;
         Ok(())
     }
+}
+
+/// PMAT-2138 (PMAT-1353's 0.1.619 deferral): the hybrid-workspace bridge for a
+/// Python call into a C boundary that speaks `unsigned int` (`Type::CUInt`).
+///
+/// The Python frontend lowers a boundary call before the C side is known, so
+/// `bump(3)` becomes `bump(3i64)`, while the PMAT-918 safe wrapper is
+/// `bump_shim(x: u32) -> u32`. Through the plain `use … as bump` alias that is
+/// rustc E0308, and `--emit-workspace` exited 0 emitting a workspace that did
+/// not compile. This is the unsigned twin of the float hole PMAT-931 closed.
+///
+/// The bridge is a local adapter instead of the alias:
+/// `fn bump(a0: impl Into<i64>) -> i64 { ffi_shims::bump_shim(a0.into() as u32) as i64 }`.
+/// Both casts are exactly what CPython's ctypes does through a `c_uint`
+/// binding: an argument truncates modulo 2^32, and the result is a
+/// non-negative int, which `u32 → i64` widens losslessly. The published
+/// `--emit-shims` wrapper keeps its `u32` signature; only the hybrid
+/// workspace, whose caller is Python-lowered `i64` code, gets the adapter.
+///
+/// A CUInt parameter takes `impl Into<i64>`, so a Python `bool` argument
+/// (lowered as `true`, not `1i64`) is bridged too: `c_uint(True)` is 1.
+///
+/// `None` (keep the alias) unless the caller is Python, the callee is C, at
+/// least one param or the return is `CUInt`, and every other type is a plain
+/// scalar (`I64`, `Bool`, `F64`, or a `Unit` return). Those other slots keep
+/// the wrapper's own type, so a `bool` passed into an `int` slot still fails
+/// E0308 exactly as it does through the plain alias (#2145); the adapter
+/// neither fixes nor worsens that. `CULong` stays out: `u64 → i64` is lossy above 2^63, where
+/// ctypes' `c_ulonglong` returns a larger Python int.
+fn uint_adapter(entry: &FfiEntry, modules: &[Module]) -> Option<String> {
+    if entry.from_lang != SourceLang::Python || entry.to_lang != SourceLang::C {
+        return None;
+    }
+    let f = defining_function(modules, entry)?;
+    let plain = |t: &Type| matches!(t, Type::I64 | Type::Bool | Type::F64 | Type::CUInt);
+    let ret_ok = f.return_type == Type::Unit || plain(&f.return_type);
+    if !ret_ok || !f.params.iter().all(|p| plain(&p.ty)) {
+        return None;
+    }
+    let has_uint = f.return_type == Type::CUInt || f.params.iter().any(|p| p.ty == Type::CUInt);
+    if !has_uint {
+        return None;
+    }
+    // A CUInt slot takes `impl Into<i64>`, not `i64`: the Python frontend lowers
+    // an int argument as `3i64` but a bool argument as `true`, and ctypes'
+    // `c_uint(True)` is 1, which is exactly `i64::from(true)`.
+    let caller_ty = |t: &Type| {
+        if *t == Type::CUInt {
+            "impl Into<i64>"
+        } else {
+            wrapper_native(t)
+        }
+    };
+    let params: Vec<String> = f
+        .params
+        .iter()
+        .enumerate()
+        .map(|(i, p)| format!("a{i}: {}", caller_ty(&p.ty)))
+        .collect();
+    let args: Vec<String> = f
+        .params
+        .iter()
+        .enumerate()
+        .map(|(i, p)| {
+            if p.ty == Type::CUInt {
+                format!("a{i}.into() as u32")
+            } else {
+                format!("a{i}")
+            }
+        })
+        .collect();
+    let call = format!("ffi_shims::{}_shim({})", entry.symbol, args.join(", "));
+    let (ret, body) = match &f.return_type {
+        Type::Unit => (String::new(), call),
+        Type::CUInt => (" -> i64".to_string(), format!("{call} as i64")),
+        t => (format!(" -> {}", wrapper_native(t)), call),
+    };
+    Some(format!(
+        "// PMAT-2138: `{sym}` crosses a C `unsigned int`; Python-lowered callers\n\
+         // pass and expect `i64`, cast exactly as ctypes' c_uint does.\n\
+         #[allow(dead_code)]\n\
+         fn {sym}({params}){ret} {{\n    {body}\n}}\n",
+        sym = entry.symbol,
+        params = params.join(", "),
+    ))
 }
 
 /// One emitted boundary's contribution to the shim file: an optional
@@ -3161,5 +3249,84 @@ mod tests {
             ),
             other => panic!("expected Print, got {other:?}"),
         }
+    }
+
+    /// PMAT-2138: `uint_adapter` over a reconciled Python -> C boundary `f`.
+    fn adapter_for(params: Vec<(&str, Type)>, ret: Type) -> Option<String> {
+        let mut modules = vec![
+            module(
+                "app",
+                SourceLang::Python,
+                vec![boundary(SourceLang::Python, SourceLang::C, "f")],
+            ),
+            c_fn("f", params, ret),
+        ];
+        resolve_boundary_to_langs(&mut modules);
+        let manifest = FfiManifest::reconcile(&modules).expect("reconciles");
+        uint_adapter(&manifest.entries[0], &modules)
+    }
+
+    #[test]
+    fn uint_adapter_casts_an_unsigned_param_and_return_like_ctypes_c_uint() {
+        let a = adapter_for(vec![("x", Type::CUInt)], Type::CUInt).expect("CUInt boundary");
+        assert!(
+            a.contains("fn f(a0: impl Into<i64>) -> i64 {\n    ffi_shims::f_shim(a0.into() as u32) as i64\n}"),
+            "{a}"
+        );
+        assert!(
+            !a.contains("use ffi_shims"),
+            "the adapter replaces the alias: {a}"
+        );
+    }
+
+    #[test]
+    fn uint_adapter_passes_other_scalars_through_at_the_wrappers_own_type() {
+        // CUInt + f64 params, signed int return: only the CUInt arg is cast,
+        // and a non-CUInt return gets no trailing cast.
+        let a = adapter_for(vec![("x", Type::CUInt), ("y", Type::F64)], Type::I64)
+            .expect("mixed boundary with one CUInt");
+        assert!(
+            a.contains("fn f(a0: impl Into<i64>, a1: f64) -> i64 {\n    ffi_shims::f_shim(a0.into() as u32, a1)\n}"),
+            "{a}"
+        );
+    }
+
+    #[test]
+    fn uint_adapter_declines_everything_it_does_not_model() {
+        // No CUInt at all: the plain alias is right.
+        assert_eq!(adapter_for(vec![("x", Type::I64)], Type::I64), None);
+        // CULong: u64 -> i64 is lossy above 2^63, where ctypes returns a larger int.
+        assert_eq!(adapter_for(vec![("x", Type::CULong)], Type::CULong), None);
+        assert_eq!(adapter_for(vec![("x", Type::CUInt)], Type::CULong), None);
+        // A non-scalar alongside a CUInt: the wrapper's type is not a plain pass-through.
+        assert_eq!(
+            adapter_for(vec![("x", Type::CUInt), ("s", Type::Str)], Type::I64),
+            None
+        );
+    }
+
+    #[test]
+    fn uint_adapter_is_only_for_python_callers_of_c() {
+        let mut modules = vec![
+            module(
+                "app",
+                SourceLang::Python,
+                vec![boundary(SourceLang::Python, SourceLang::C, "f")],
+            ),
+            c_fn("f", vec![("x", Type::CUInt)], Type::CUInt),
+        ];
+        resolve_boundary_to_langs(&mut modules);
+        let manifest = FfiManifest::reconcile(&modules).expect("reconciles");
+        let mut entry = manifest.entries[0].clone();
+        assert!(
+            uint_adapter(&entry, &modules).is_some(),
+            "control: Python -> C adapts"
+        );
+        entry.from_lang = SourceLang::Shell;
+        assert_eq!(
+            uint_adapter(&entry, &modules),
+            None,
+            "a non-Python caller keeps the alias"
+        );
     }
 }

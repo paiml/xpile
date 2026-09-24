@@ -27181,3 +27181,23 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
   labels:
   - kind:code
   notes: 'Epic #2124 (v0.1.619). Found by quorum lane 3 on #2137.'
+- id: PMAT-2138
+  github_issue: 2138
+  item_type: bug
+  title: 'hybrid: a Python call into a C unsigned boundary emits a workspace that does not compile'
+  status: inprogress
+  priority: high
+  assigned_to: null
+  created: 2026-09-24T01:00:00Z
+  updated: 2026-09-24T01:00:00Z
+  spec: null
+  acceptance_criteria:
+  - 'xpile hybrid --verify on hybrid_unsigned MATCHes CPython without --repair'
+  - hybrid_repair.rs inverted tripwire resolved per its own instruction, docs updated
+  - red arm with the adapter removed
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'Epic #2124 (v0.1.619); the PMAT-1353 deferral.'

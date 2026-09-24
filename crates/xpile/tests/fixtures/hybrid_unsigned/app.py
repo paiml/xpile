@@ -1,36 +1,32 @@
-# PMAT-1353: the fixture that makes `xpile hybrid --verify` reach a real,
-# production-emitted BUILD FAILURE — and that `--verify --repair` converges on.
+# PMAT-2138 (was PMAT-1353's repair witness): a Python call into a C
+# `unsigned int` boundary (meta-HIR `Type::CUInt`) must build and agree with
+# CPython under plain `xpile hybrid --verify`.
 #
-# THE DEFECT IT CARRIES. The boundary is a C `unsigned int` (meta-HIR
-# `Type::CUInt`). `emit_c_shim` gets it right: PMAT-918 makes the safe wrapper
-# `bump_shim(x: u32) -> u32`, preserving the signedness across the ABI. The
-# PYTHON frontend does not, because it lowers a boundary call before the C side
-# is known and defaults an unknown callee to `i64` — so the emitted `main.rs`
-# calls `bump(3i64)` into a `u32` slot and `cargo build` fails with E0308. That
-# is exactly the call-site retype hole PMAT-931 closed for `double`, still open
-# in the UNSIGNED direction. `--emit-workspace` on this fixture exits 0 emitting
-# a workspace that does not compile.
+# THE DEFECT THIS FIXTURE USED TO CARRY. The Python frontend lowers a boundary
+# call before the C side is known and defaults an unknown callee to `i64`, so
+# `bump(3)` became `bump(3i64)`. The PMAT-918 safe wrapper is
+# `bump_shim(x: u32) -> u32`, so the emitted workspace failed E0308, and
+# `--emit-workspace` exited 0 emitting it. PMAT-1353 made `--verify` report that
+# failure instead of skipping it, and used this fixture as the one place the
+# `--repair` loop converged on a real emitter symptom.
 #
-# AND THE SKIP THAT HID IT. Until PMAT-1353, `ctypes_name` had no `CUInt` arm, so
-# `--verify` printed "boundary `bump` has a non-ABI-mappable type — skipping" and
-# exited 0. The one check that would have caught the uncompilable emit declined
-# to look at it. `unsigned int` <-> `ctypes.c_uint` is the canonical binding the
-# shim already speaks, so widening the CHECKED set — not deciding any semantics —
-# turns that disclosed green into the true red below.
+# THE FIX. The hybrid workspace now bridges a CUInt boundary with an adapter,
+# `fn bump(a0: impl Into<i64>) -> i64 { ffi_shims::bump_shim(a0.into() as u32)
+# as i64 }`, which casts exactly as ctypes' `c_uint` binding does. The lines below pin that
+# equivalence where it can differ: an argument below zero and one above 2^32
+# (both truncate mod 2^32), a result used in arithmetic (it must arrive as a
+# Python int, not a u32), and a bool argument (lowered `true`, not `1i64`;
+# ctypes' c_uint(True) is 1), which is why the adapter takes `impl Into<i64>`.
 #
-# WHY IT IS THE REPAIR WITNESS. `Symptom::BuildError` carrying E0308 is precisely
-# `FfiArgCastRepair`'s domain: it rewrites the call site to `bump(3i64 as u32)`,
-# which compiles, runs, and prints 4 — byte-identical to CPython through a
-# `c_uint`-bound ctypes call (verified both ways, not assumed). So this fixture
-# is the one place the wired repair loop is observed to CONVERGE on a symptom the
-# emitter really produces, rather than on an injected one.
-#
-# COUPLING, on purpose: the day the frontend retypes unsigned call sites the way
-# PMAT-931 retyped float ones, this fixture stops failing to build and the two
-# tests driving it go red LOUDLY. That is the correct prompt — a repair witness
-# whose defect has been fixed must be re-pointed, not quietly kept green.
+# WHAT THAT COST. This fixture stopped being the repair loop's convergence
+# witness; hybrid_bool_arg (#2145) is now. See hybrid_repair.rs.
 from ._core import bump
 
 
 def main() -> None:
     print(bump(3))
+    print(bump(-1))
+    print(bump(4294967301))
+    x = bump(41)
+    print(x * 2 + 1)
+    print(bump(True))

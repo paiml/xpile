@@ -571,9 +571,12 @@ fn tool_available(tool: &str) -> bool {
 /// a disclosed pass standing in front of it: the one check that would have caught
 /// it declined to look. `unsigned int` ↔ `ctypes.c_uint` is the canonical binding
 /// the shim itself already uses (`::std::os::raw::c_uint` / `u32`), so this
-/// widens the CHECKED set without deciding any semantics. The consequence is
-/// intended: such a fixture now exits NON-ZERO naming the build failure, and
-/// `--repair` converges on it (see [`repair_hybrid`]).
+/// widens the CHECKED set without deciding any semantics. The consequence was
+/// intended: such a fixture exited NON-ZERO naming the build failure, and
+/// `--repair` converged on it (see [`repair_hybrid`]). PMAT-2138 then fixed that
+/// build failure at the source (the hybrid workspace bridges a CUInt boundary
+/// with an `impl Into<i64>` adapter), so it now MATCHes CPython under plain
+/// `--verify`.
 ///
 /// `CULong`, `CLong`, `F32` and `Ptr` stay refused — each needs its own probed
 /// binding decision, and an unprobed guess here would re-create exactly the
@@ -1040,9 +1043,13 @@ impl RepairRule for RecordingRule {
 ///     `retype_float_ffi_sites` plus `Expr::ToStr { of_float: true }` fixed that
 ///     class in the production seam. Its domain is empty here too.
 ///
-/// So one of three rules is reachable through this seam. That is a real
-/// capability — it converges on a real, production-emitted `E0308` (see
-/// `fixtures/hybrid_unsigned`) — and it is not three.
+/// So one of three rules is wired through this seam, and it is not three.
+/// Its production witness moved in PMAT-2138: it converged on the unsigned call
+/// site in `fixtures/hybrid_unsigned` until that `E0308` was fixed at the
+/// source, and now converges on `fixtures/hybrid_bool_arg` (#2145), a Python
+/// `bool` passed to a C `int` boundary. The `float` and `unsigned long` E0308s
+/// (#2139) are not reachable: `--verify` skips those boundaries as
+/// non-ABI-mappable, so the loop is never entered on them.
 ///
 /// The `abi` field carries the WRAPPER's native type ([`wrapper_native`]), not
 /// the C ABI type: the candidate is the `main.rs` body, whose `f(..)` call
