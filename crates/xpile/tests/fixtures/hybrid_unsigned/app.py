@@ -19,7 +19,8 @@
 # ctypes' c_uint(True) is 1), which is why the adapter takes `impl Into<i64>`.
 #
 # WHAT THAT COST. This fixture stopped being the repair loop's convergence
-# witness; hybrid_bool_arg (#2145) is now. See hybrid_repair.rs.
+# witness; hybrid_bool_arg was until #2145, and hybrid_ulong is now. See
+# hybrid_repair.rs.
 from ._core import bump
 
 

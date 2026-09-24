@@ -27221,3 +27221,22 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
   labels:
   - kind:code
   notes: 'Epic #2124 (v0.1.619). Stacked on PR #2140 (PMAT-2138).'
+- id: PMAT-2145
+  github_issue: 2145
+  item_type: bug
+  title: "hybrid: a Python bool argument to a C int boundary emits a workspace that fails E0308"
+  status: inprogress
+  priority: high
+  assigned_to: null
+  created: 2026-09-24T12:00:00Z
+  updated: 2026-09-24T12:00:00Z
+  spec: null
+  acceptance_criteria:
+  - a bool argument to a scalar int C boundary builds and matches CPython under plain --verify
+  - the repair loop's convergence witness is re-pointed at a production symptom that still exists
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'Epic #2124 (v0.1.619). Stacked on PR #2146 (PMAT-2139).'
