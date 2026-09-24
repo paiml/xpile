@@ -1,0 +1,141 @@
+{
+  "ticket": "PMAT-2138",
+  "base": "origin/main",
+  "base_resolved": "origin/main",
+  "base_note": "no origin/origin/main exists; judged against the local ref",
+  "head": "728bd5081ebe47cc097768eada0ff71fbbb7c938",
+  "diff_sha256": "982ecf491ab6a8a44e905818ffae83b23e3c6a8ebdd94a517feb7c4a7c847dff",
+  "width": 1,
+  "executor": "agy",
+  "prompt_mode": "inline",
+  "prompt_bytes": 21974,
+  "author": {
+    "model": "claude-opus-5-5",
+    "family": "claude",
+    "source": "flag"
+  },
+  "agreed": true,
+  "lanes": [
+    {
+      "lane": 1,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff correctly addresses the gate weakening identified by the post-merge quorum for PMAT-2138. It repoints the cleanup gate `repair_writes_nothing_and_leaves_no_workspace_behind` back to a converging repair (`hybrid_bool_arg`) rather than the failing `hybrid_divergent` run, fully restoring the gate's coverage of successful repairs. It also restores the missing non-write posture assertion in the convergence witness. No test asserts the opposite, no gates are weakened, and all receipt claims are backed by the diff.",
+      "findings": [],
+      "raw_bytes": 3979,
+      "err_bytes": 62,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.1-pro-high",
+      "model_measured": "gemini-3.1-pro-high",
+      "model_source": "measured",
+      "family": "gemini",
+      "role": "independent",
+      "fallback": {
+        "judged_by": "gemini-3.1-pro-high",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gemini-3.1-pro-high",
+            "family": "gemini",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    },
+    {
+      "lane": 2,
+      "model": "claude-sonnet-5",
+      "model_source": "declared",
+      "family": "claude",
+      "agent": "claude-code-subagent",
+      "judged": "728bd5081ebe47cc097768eada0ff71fbbb7c938",
+      "verdict": "PASS",
+      "summary": "Fresh build (own CARGO_TARGET_DIR): hybrid_bool_arg --verify fails E0308 (expected i64, found bool); --verify --repair converges in 1 iteration, prints 'xpile wrote NOTHING to your tree', builds iterations+1 probes and cleans them up. Mutation: a scratch copy of main.rs that writes a marker into the fixture dir on a converged repair turned repair_writes_nothing_and_leaves_no_workspace_behind red on the snapshot-diff assertion (non-vacuous). ef6e1527 confirmed to have dropped the no-write assertion and moved the witness to fail-closed hybrid_divergent; this PR reverses both. hybrid_repair 8/8; changelog_freshness, changelog_release_membership_witness, release_story_derivation_witness pass; audit JSON valid and consistent with git history.",
+      "findings": []
+    },
+    {
+      "lane": 3,
+      "model": "claude-haiku-4-5",
+      "model_source": "declared",
+      "family": "claude",
+      "agent": "claude-code-subagent",
+      "judged": "728bd5081ebe47cc097768eada0ff71fbbb7c938",
+      "verdict": "PASS",
+      "summary": "Built from this worktree into a fresh target dir: hybrid_repair 8/8; hybrid_bool_arg --repair prints '✓ REPAIRED in 1 iteration(s)' and 'xpile wrote NOTHING to your tree'; hybrid_divergent --repair fails closed after 0 iterations. The witness is back on a converging repair and the no-write assertion is restored, addressing the post-merge lane-1 FAIL.",
+      "findings": [],
+      "voided_attempt": {
+        "verdict": "FAIL",
+        "reason": "VOIDED as a measurement error: the lane ran a stale xpile binary from /mnt/nvme-raid0/targets/xpile-lane-haiku (built 09:49 from PR #2147's code; `strings` finds IntoCDouble, which exists only in #2147). That binary MATCHes hybrid_bool_arg; this head's own build still fails E0308 (orchestrator measured, hybrid_repair 8/8). The seat was re-run on a fresh target dir, building from this head."
+      }
+    }
+  ],
+  "dissent": [],
+  "dedup": [],
+  "uncovered": [],
+  "coverage_source": "lanes",
+  "partial": true,
+  "partial_reasons": [
+    "lane 1: non-empty .err (62 bytes, 1 line(s) beyond agy-lane's workspace narration)"
+  ],
+  "fallback": {
+    "same_family_width": 1,
+    "chain": [
+      {
+        "model": "gemini-3.1-pro-high",
+        "family": "gemini",
+        "disposition": "configured"
+      },
+      {
+        "model": "gpt-oss-120b-medium",
+        "family": "openai",
+        "disposition": "fallback"
+      },
+      {
+        "model": "qwen3.5",
+        "family": "qwen",
+        "disposition": "not-run",
+        "why": "no quorum.local_lane in the config — the aprender lane has no model to load"
+      },
+      {
+        "model": "claude-opus-4-6-thinking",
+        "family": "claude",
+        "disposition": "width",
+        "why": "same family as the author: at most 1 lane, recorded role width, counted toward no floor (R-15a)"
+      },
+      {
+        "model": "claude-sonnet-4-6",
+        "family": "claude",
+        "disposition": "width",
+        "why": "same family as the author: at most 1 lane, recorded role width, counted toward no floor (R-15a)"
+      }
+    ],
+    "precheck": [
+      {
+        "family": "gemini",
+        "model": "gemini-3.1-pro-high",
+        "probe": 1,
+        "outcome": "live"
+      }
+    ],
+    "prah": {
+      "source": "install-receipt",
+      "path": "/home/noah/.claude/skills/paiml-implement/bin/prah"
+    }
+  },
+  "auto_merge": {
+    "checked": true,
+    "was_armed": false,
+    "disarmed": false,
+    "note": "auto-merge not armed"
+  },
+  "lint": {
+    "ok": true,
+    "output": "receipt complete: kind=artifact lanes=1 author=claude-opus-5-5/claude"
+  },
+  "brief_sha256": "8ad92017837074e0d9a0e79f07c36def38afb51595b7b83106dd3f0cc1ffec84",
+  "lane_mix": "claude-sonnet-5 + 1 agy (gemini-3.1-pro-high, --width 1) + claude-haiku-4-5 (operator rule, 2026-09-24); all three judged the same brief (brief_sha256), diff_sha256 and head",
+  "degraded": "same-family"
+}

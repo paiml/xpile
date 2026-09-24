@@ -43,6 +43,19 @@ matrix, the `--emit-shims`/`--emit-workspace` trees and several error paths are
 byte-identical between the old and new binaries. The one branch not exercised,
 `emit_shims_file`'s unshimmable-boundary error, can't be reached from the C
 frontend today.
+### The repair loop's no-write witness runs on a converging repair again (PMAT-2138, post-merge quorum)
+
+PMAT-2138 weakened two assertions in `hybrid_repair.rs`, and the post-merge
+quorum round on its squash caught one of them. First,
+`repair_writes_nothing_and_leaves_no_workspace_behind` moved from a CONVERGING
+repair to the fail-closed `hybrid_divergent` run. That run applies 0
+iterations, builds 1 probe and never holds a repaired candidate that could be
+written back, while the test's doc still said "a converging `--repair` leaves
+the fixture byte-identical". Second, the convergence test lost its
+`xpile wrote NOTHING to your tree` assertion, although the binary still prints
+that line. Both are restored on the current convergence witness,
+`hybrid_bool_arg`.
+
 ### A Python call into a C `unsigned int` now builds and matches CPython (PMAT-2138)
 
 `xpile hybrid <dir> --emit-workspace` exited 0 emitting a workspace that did not
