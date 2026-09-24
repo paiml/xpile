@@ -11,14 +11,15 @@
 //!
 //! ## The four properties, and why each one is here
 //!
-//! 1. **The symptom it used to converge on is FIXED at the source**
-//!    ([`unsigned_boundary_matches_cpython_without_repair`]). Until PMAT-2138,
-//!    `fixtures/hybrid_unsigned` carried a real `E0308` (the Python side lowered
-//!    `bump(3i64)` into the PMAT-918 `u32` wrapper) and `--repair` converging
-//!    on it was the proof that the loop could fix something the emitter really
-//!    produces. The hybrid workspace now bridges a CUInt boundary itself, so
-//!    that fixture MATCHes CPython under plain `--verify`. See the tripwire
-//!    section below for what that did to the repair loop's reach.
+//! 1. **It CONVERGES on a symptom the emitter really produces**
+//!    ([`repair_converges_on_a_production_emitted_e0308`]). A repair loop that
+//!    has only ever been observed to fix an INJECTED defect is indistinguishable
+//!    from one that cannot fix anything. `fixtures/hybrid_bool_arg` carries a
+//!    real, still-open `E0308` (#2145): a Python `bool` passed to a C `int`
+//!    boundary lowers as `inc(true)` into the `i64` wrapper. `--repair` casts the
+//!    call site and the artifact then agrees with CPython. Until PMAT-2138 the
+//!    witness was `hybrid_unsigned`, whose E0308 is now fixed at the source
+//!    ([`unsigned_boundary_matches_cpython_without_repair`]).
 //!
 //! 2. **It FAILS CLOSED when no rule applies**
 //!    ([`repair_fails_closed_when_no_rule_applies`]). `fixtures/hybrid_divergent`
@@ -44,34 +45,28 @@
 //!
 //! ## Honest scope — read before quoting "the repair loop is wired"
 //!
-//! **Today no wired rule has a reachable production symptom through this
-//! seam.** `main.rs::boundary_repair_rules` wires ONE of `xpile-agent`'s three
-//! rules, `FfiArgCastRepair`, and documents why the other two have provably
-//! empty domains here: `FfiReturnCastRepair` targets `__r` in
-//! `src/ffi_shims.rs`, which the probe REGENERATES every iteration, and
-//! `FloatReprRepair` targets a plain `println!("{}", <float>)`, which PMAT-931
-//! stopped this emitter producing.
+//! ONE of `xpile-agent`'s three rules is reachable through this seam, and
+//! `main.rs::boundary_repair_rules` documents why for each: `FfiReturnCastRepair`
+//! targets `__r` in `src/ffi_shims.rs`, which the probe REGENERATES every
+//! iteration, and `FloatReprRepair` targets a plain `println!("{}", <float>)`,
+//! which PMAT-931 stopped this emitter producing. Both have provably empty
+//! domains here.
 //!
-//! `FfiArgCastRepair`'s one real symptom was the unsigned call site, and
-//! PMAT-2138 fixed it at the source. Measured on that branch, the only E0308s
-//! the hybrid emitter still produces are the `float` and `unsigned long`
-//! boundaries (#2139), and `--verify` never builds those: it skips them as
-//! "non-ABI-mappable" and exits 0, so the repair loop is never entered. What
-//! this file can still prove is the seam's contract: a user can reach the loop,
-//! it fails closed when nothing applies (property 2), it is inert when the
-//! artifact matches (property 3), and it writes nothing (property 4). It no
-//! longer proves the loop can FIX a production symptom. Say that when quoting
-//! it.
+//! `FfiArgCastRepair`'s reachable domain today is a call-site argument whose
+//! lowered type differs from the wrapper's scalar type and which `--verify`
+//! actually builds: `hybrid_bool_arg` (#2145) is one. The E0308s for `float` and
+//! `unsigned long` boundaries (#2139) are NOT reachable, because `--verify`
+//! skips those boundaries as "non-ABI-mappable" and exits 0.
 //!
 //! ## The inverted tripwire fired, and was resolved as it instructed
 //!
 //! This file asserted `hybrid_unsigned` FAILS TO BUILD, with the instruction:
 //! the day the unsigned call site is retyped, re-point the repair witness at
-//! whatever `E0308` the emitter then produces, or, if none remains reachable,
-//! record that `FfiArgCastRepair`'s domain has become empty. PMAT-2138 retyped
-//! it. None remains reachable (above), so this is that record. The day #2139
-//! makes `--verify` build a `float` or `unsigned long` boundary, re-point a
-//! convergence witness there.
+//! whatever `E0308` the emitter then produces. PMAT-2138 retyped it. A first
+//! draft of that change recorded the domain as EMPTY; a quorum lane refuted that
+//! with `bump(True)`, which led to `hybrid_bool_arg`. The witness now points
+//! there, and the same instruction holds for it: the day a bool argument to an
+//! int boundary builds without repair, re-point again.
 //!
 //! Gated on cc + python3 + cargo so a constrained runner skips gracefully.
 
@@ -175,8 +170,8 @@ fn unsigned_boundary_matches_cpython_without_repair() {
         "`--verify` on hybrid_unsigned must exit 0;\nstdout:\n{stdout}\nstderr:\n{stderr}"
     );
     assert!(
-        stdout.contains(r#"✓ MATCH — stdout byte-identical (4 line(s)): "4\n0\n6\n85""#),
-        "expected CPython's exact output, wraparound cases included:\n{stdout}"
+        stdout.contains(r#"✓ MATCH — stdout byte-identical (5 line(s)): "4\n0\n6\n85\n2""#),
+        "expected CPython's exact output, wraparound and bool cases included:\n{stdout}"
     );
     assert!(
         stdout.contains("bump : Python → C"),
@@ -189,6 +184,72 @@ fn unsigned_boundary_matches_cpython_without_repair() {
     assert!(
         !stderr.contains("failed to build"),
         "the emitted workspace must compile:\n{stderr}"
+    );
+}
+
+/// `--verify --repair` on `hybrid_bool_arg` exits 0 and prints the converged
+/// rule chain: the loop's CONVERGENCE witness since PMAT-2138 (#2145).
+///
+/// A Python `bool` passed to a C `int` boundary lowers as `inc(true)` into the
+/// `i64` wrapper, so the emitted workspace fails E0308, and `FfiArgCastRepair`
+/// casts the call site. Non-vacuity is asserted the same three ways the
+/// `hybrid_unsigned` version of this test did: the boundary reconciled, the
+/// loop started with a derived rule set, and the E0308 was reported in full
+/// before the hand-off.
+#[test]
+fn repair_converges_on_a_production_emitted_e0308() {
+    if !toolchain() {
+        eprintln!("cc/python3/cargo unavailable — skipping hybrid --repair convergence test");
+        return;
+    }
+    let out = run("hybrid_bool_arg", true);
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        out.status.success(),
+        "--verify --repair must exit 0 once the loop converges;\nstdout:\n{stdout}\nstderr:\n{stderr}"
+    );
+    assert!(
+        stdout.contains("✓ REPAIRED in 1 iteration(s) — applied rule chain: [\"ffi-arg-cast\"]"),
+        "expected the converged verdict with its rule chain:\n{stdout}"
+    );
+    assert!(
+        stdout.contains("--repair: bounded repair loop — 1 rule(s) [\"ffi-arg-cast\"]"),
+        "the loop must announce the rules DERIVED from the manifest:\n{stdout}"
+    );
+    assert!(
+        stdout.contains("inc : Python → C"),
+        "the FFI boundary must still reconcile:\n{stdout}"
+    );
+    assert!(
+        stderr.contains("hybrid artifact failed to build") && stderr.contains("error[E0308]"),
+        "the original build failure must be reported in full before the repair:\n{stderr}"
+    );
+}
+
+/// WITHOUT `--repair`, `hybrid_bool_arg` exits NON-ZERO naming the E0308, and
+/// the direction of the mismatch is pinned so an unrelated build failure
+/// cannot keep this green.
+#[test]
+fn verify_reports_the_bool_argument_build_failure() {
+    if !toolchain() {
+        eprintln!("cc/python3/cargo unavailable — skipping bool-argument --verify test");
+        return;
+    }
+    let out = run("hybrid_bool_arg", false);
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        !out.status.success(),
+        "`--verify` on an uncompilable workspace must exit NON-ZERO;\nstdout:\n{stdout}\nstderr:\n{stderr}"
+    );
+    assert!(
+        !stdout.contains("non-ABI-mappable"),
+        "an int boundary must be checked, not skipped:\n{stdout}"
+    );
+    assert!(
+        stderr.contains("expected `i64`, found `bool`"),
+        "the build failure must be the bool-into-int call site specifically:\n{stderr}"
     );
 }
 

@@ -24,7 +24,7 @@ matrix, the `--emit-shims`/`--emit-workspace` trees and several error paths are
 byte-identical between the old and new binaries. The one branch not exercised,
 `emit_shims_file`'s unshimmable-boundary error, can't be reached from the C
 frontend today.
-### A Python call into a C `unsigned int` now builds and matches CPython, and the repair loop lost its only real symptom (PMAT-2138)
+### A Python call into a C `unsigned int` now builds and matches CPython (PMAT-2138)
 
 `xpile hybrid <dir> --emit-workspace` exited 0 emitting a workspace that did not
 compile whenever Python called a C `unsigned int` function: the Python side
@@ -32,21 +32,23 @@ lowered `bump(3)` as `bump(3i64)`, the PMAT-918 safe wrapper takes `u32`, and
 rustc said E0308. PMAT-931 had closed the same hole for `double`; PMAT-1353
 deferred the unsigned one to this release.
 
-The hybrid workspace now bridges such a boundary with a small `i64` adapter that
-casts exactly as CPython's ctypes `c_uint` binding does: arguments truncate
-modulo 2^32 and the result widens losslessly. `hybrid_unsigned` pins the cases
-where that could differ (an argument below zero, one above 2^32, a result used in
-arithmetic) against CPython under plain `--verify`: `4 0 6 85`, byte-identical.
-The published `--emit-shims` wrapper keeps its `u32` signature.
+The hybrid workspace now bridges such a boundary with a small adapter,
+`fn bump(a0: impl Into<i64>) -> i64 { ffi_shims::bump_shim(a0.into() as u32) as i64 }`,
+which casts exactly as CPython's ctypes `c_uint` binding does: arguments truncate
+modulo 2^32, a `bool` argument is 0 or 1, and the result widens losslessly.
+`hybrid_unsigned` pins the cases where that could differ (an argument below
+zero, one above 2^32, a result used in arithmetic, a bool) against CPython under
+plain `--verify`: `4 0 6 85 2`, byte-identical. The published `--emit-shims`
+wrapper keeps its `u32` signature.
 
-The cost, stated rather than hidden: that E0308 was the one production symptom
-`--repair` converged on. **No wired repair rule has a reachable production symptom
-today.** The E0308s the emitter still produces, for `float` and `unsigned long`
-boundaries, sit behind `--verify`'s "non-ABI-mappable" skip, which exits 0
-(#2139, filed from this slice's probes). The repair seam still proves it is
-reachable, fails closed, is inert on a match and writes nothing; it no longer
-proves it can fix real emitter output. `hybrid_repair.rs` says so in its docs, as
-its own inverted tripwire instructed.
+That E0308 was also the repair loop's convergence witness, and `hybrid_repair.rs`
+told whoever fixed it to re-point the witness. A first draft of this change
+declared the loop's domain empty instead; a quorum lane refuted it with
+`bump(True)`, which is how #2145 was found: a Python `bool` passed to a C `int`
+boundary still fails E0308 without `--repair`, and `--repair` converges on it.
+`fixtures/hybrid_bool_arg` is the new witness. The `float` and `unsigned long`
+E0308s are still hidden behind `--verify`'s "non-ABI-mappable" skip, which exits
+0 (#2139).
 
 ### The rule that says "each declared screen family must still match something" named five of the eight, because the list was typed instead of derived (PMAT-1516)
 

@@ -10,16 +10,16 @@
 # failure instead of skipping it, and used this fixture as the one place the
 # `--repair` loop converged on a real emitter symptom.
 #
-# THE FIX. The hybrid workspace now bridges a CUInt boundary with an i64 adapter
-# (`fn bump(a0: i64) -> i64 { ffi_shims::bump_shim(a0 as u32) as i64 }`), which
-# casts exactly as ctypes' `c_uint` binding does. The lines below pin that
+# THE FIX. The hybrid workspace now bridges a CUInt boundary with an adapter,
+# `fn bump(a0: impl Into<i64>) -> i64 { ffi_shims::bump_shim(a0.into() as u32)
+# as i64 }`, which casts exactly as ctypes' `c_uint` binding does. The lines below pin that
 # equivalence where it can differ: an argument below zero and one above 2^32
-# (both truncate mod 2^32), and a result used in arithmetic (it must arrive as
-# a Python int, not a u32).
+# (both truncate mod 2^32), a result used in arithmetic (it must arrive as a
+# Python int, not a u32), and a bool argument (lowered `true`, not `1i64`;
+# ctypes' c_uint(True) is 1), which is why the adapter takes `impl Into<i64>`.
 #
-# WHAT THAT COST. `FfiArgCastRepair` has no reachable production symptom through
-# `--verify` any more; see hybrid_repair.rs and #2139 for the float and
-# unsigned-long E0308s that remain behind `--verify`'s skip.
+# WHAT THAT COST. This fixture stopped being the repair loop's convergence
+# witness; hybrid_bool_arg (#2145) is now. See hybrid_repair.rs.
 from ._core import bump
 
 
@@ -29,3 +29,4 @@ def main() -> None:
     print(bump(4294967301))
     x = bump(41)
     print(x * 2 + 1)
+    print(bump(True))

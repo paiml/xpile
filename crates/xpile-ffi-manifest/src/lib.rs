@@ -460,17 +460,22 @@ impl FfiManifest {
 /// not compile. This is the unsigned twin of the float hole PMAT-931 closed.
 ///
 /// The bridge is a local adapter instead of the alias:
-/// `fn bump(a0: i64) -> i64 { ffi_shims::bump_shim(a0 as u32) as i64 }`.
+/// `fn bump(a0: impl Into<i64>) -> i64 { ffi_shims::bump_shim(a0.into() as u32) as i64 }`.
 /// Both casts are exactly what CPython's ctypes does through a `c_uint`
 /// binding: an argument truncates modulo 2^32, and the result is a
 /// non-negative int, which `u32 → i64` widens losslessly. The published
 /// `--emit-shims` wrapper keeps its `u32` signature; only the hybrid
 /// workspace, whose caller is Python-lowered `i64` code, gets the adapter.
 ///
+/// A CUInt parameter takes `impl Into<i64>`, so a Python `bool` argument
+/// (lowered as `true`, not `1i64`) is bridged too: `c_uint(True)` is 1.
+///
 /// `None` (keep the alias) unless the caller is Python, the callee is C, at
 /// least one param or the return is `CUInt`, and every other type is a plain
-/// scalar the caller already passes unchanged (`I64`, `Bool`, `F64`, or a
-/// `Unit` return). `CULong` stays out: `u64 → i64` is lossy above 2^63, where
+/// scalar (`I64`, `Bool`, `F64`, or a `Unit` return). Those other slots keep
+/// the wrapper's own type, so a `bool` passed into an `int` slot still fails
+/// E0308 exactly as it does through the plain alias (#2145); the adapter
+/// neither fixes nor worsens that. `CULong` stays out: `u64 → i64` is lossy above 2^63, where
 /// ctypes' `c_ulonglong` returns a larger Python int.
 fn uint_adapter(entry: &FfiEntry, modules: &[Module]) -> Option<String> {
     if entry.from_lang != SourceLang::Python || entry.to_lang != SourceLang::C {
@@ -486,9 +491,12 @@ fn uint_adapter(entry: &FfiEntry, modules: &[Module]) -> Option<String> {
     if !has_uint {
         return None;
     }
+    // A CUInt slot takes `impl Into<i64>`, not `i64`: the Python frontend lowers
+    // an int argument as `3i64` but a bool argument as `true`, and ctypes'
+    // `c_uint(True)` is 1, which is exactly `i64::from(true)`.
     let caller_ty = |t: &Type| {
         if *t == Type::CUInt {
-            "i64"
+            "impl Into<i64>"
         } else {
             wrapper_native(t)
         }
@@ -505,7 +513,7 @@ fn uint_adapter(entry: &FfiEntry, modules: &[Module]) -> Option<String> {
         .enumerate()
         .map(|(i, p)| {
             if p.ty == Type::CUInt {
-                format!("a{i} as u32")
+                format!("a{i}.into() as u32")
             } else {
                 format!("a{i}")
             }
@@ -3262,7 +3270,7 @@ mod tests {
     fn uint_adapter_casts_an_unsigned_param_and_return_like_ctypes_c_uint() {
         let a = adapter_for(vec![("x", Type::CUInt)], Type::CUInt).expect("CUInt boundary");
         assert!(
-            a.contains("fn f(a0: i64) -> i64 {\n    ffi_shims::f_shim(a0 as u32) as i64\n}"),
+            a.contains("fn f(a0: impl Into<i64>) -> i64 {\n    ffi_shims::f_shim(a0.into() as u32) as i64\n}"),
             "{a}"
         );
         assert!(
@@ -3278,7 +3286,7 @@ mod tests {
         let a = adapter_for(vec![("x", Type::CUInt), ("y", Type::F64)], Type::I64)
             .expect("mixed boundary with one CUInt");
         assert!(
-            a.contains("fn f(a0: i64, a1: f64) -> i64 {\n    ffi_shims::f_shim(a0 as u32, a1)\n}"),
+            a.contains("fn f(a0: impl Into<i64>, a1: f64) -> i64 {\n    ffi_shims::f_shim(a0.into() as u32, a1)\n}"),
             "{a}"
         );
     }

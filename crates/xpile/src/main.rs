@@ -575,7 +575,8 @@ fn tool_available(tool: &str) -> bool {
 /// intended: such a fixture exited NON-ZERO naming the build failure, and
 /// `--repair` converged on it (see [`repair_hybrid`]). PMAT-2138 then fixed that
 /// build failure at the source (the hybrid workspace bridges a CUInt boundary
-/// with an `i64` adapter), so it now MATCHes CPython under plain `--verify`.
+/// with an `impl Into<i64>` adapter), so it now MATCHes CPython under plain
+/// `--verify`.
 ///
 /// `CULong`, `CLong`, `F32` and `Ptr` stay refused — each needs its own probed
 /// binding decision, and an unprobed guess here would re-create exactly the
@@ -1043,13 +1044,12 @@ impl RepairRule for RecordingRule {
 ///     class in the production seam. Its domain is empty here too.
 ///
 /// So one of three rules is wired through this seam, and it is not three.
-/// **Since PMAT-2138 even that one has no reachable production symptom.** It
-/// converged on a real, production-emitted `E0308` (the unsigned call site in
-/// `fixtures/hybrid_unsigned`) until that `E0308` was fixed at the source. The
-/// E0308s the emitter still produces (`float`, `unsigned long` boundaries,
-/// #2139) sit behind `--verify`'s non-ABI-mappable skip, so the loop is never
-/// entered on them. The seam is real (reachable, fail-closed, inert on a match,
-/// writes nothing); a repair it can make on real emitter output is, today, not.
+/// Its production witness moved in PMAT-2138: it converged on the unsigned call
+/// site in `fixtures/hybrid_unsigned` until that `E0308` was fixed at the
+/// source, and now converges on `fixtures/hybrid_bool_arg` (#2145), a Python
+/// `bool` passed to a C `int` boundary. The `float` and `unsigned long` E0308s
+/// (#2139) are not reachable: `--verify` skips those boundaries as
+/// non-ABI-mappable, so the loop is never entered on them.
 ///
 /// The `abi` field carries the WRAPPER's native type ([`wrapper_native`]), not
 /// the C ABI type: the candidate is the `main.rs` body, whose `f(..)` call
