@@ -153,9 +153,12 @@ fn pmat_ids(text: &str) -> Vec<String> {
 
 #[test]
 fn pmat_ids_agrees_with_the_plans_grep_on_hyphenated_spellings() {
-    // Each spelling below appeared in, or is one edit away from, a real commit
-    // message in this repo. The expected set is what `grep -oE 'PMAT-[0-9]+'`
-    // prints for the same text.
+    // Two spellings are real (`quorum-PMAT-2119.json` is the one that turned
+    // main red; `Refs PMAT-1516)` is the ordinary shape). The rest are
+    // SYNTHETIC edge cases of the same kind, not quotations: an id with a
+    // `-suffix`, an id glued to a preceding letter, `PMAT-` with no digits or a
+    // letter after it, and leading zeros. The expected set is what
+    // `grep -oE 'PMAT-[0-9]+'` prints for this text (measured).
     let msg = "docs(audit): quorum-PMAT-2119.json\n\
                branch PMAT-2120-done, Refs PMAT-1516)\n\
                XPMAT-7 and PMAT- and PMAT-x and PMAT-0042.";
