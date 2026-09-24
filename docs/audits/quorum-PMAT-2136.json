@@ -1,0 +1,98 @@
+{
+ "ticket": "PMAT-2136",
+ "pr": 2137,
+ "base": "main",
+ "head": "14a0a3c478dff91c75cbf094296f7a23c94b3da0",
+ "diff_sha256": "849da2be64bcde9a806cde6c659c34192969f38f58603860a26e7f9b035f3dea",
+ "agreed": true,
+ "degraded": "same-family",
+ "degraded_basis": "Operator rule, relayed verbatim by the cop 2026-09-24 ~02:35 CEST: agy 429 on every family; 'no wait, fall back fast'. Round 2 ran on Claude Code, sonnet-5 lanes, the author being claude-opus-5-5.",
+ "author": {
+  "session": "xpile-74",
+  "model": "claude-opus-5-5",
+  "family": "claude"
+ },
+ "rounds": [
+  {
+   "round": 1,
+   "executor": "agy",
+   "judged": "2b11285e",
+   "lanes": [
+    {
+     "lane": 1,
+     "model_measured": "gemini-3.1-pro-high",
+     "verdict": "FAIL"
+    },
+    {
+     "lane": 2,
+     "model_measured": "gemini-3.8-flash-high",
+     "verdict": "FAIL"
+    },
+    {
+     "lane": 3,
+     "model": "gemini-3.7-flash-high",
+     "verdict": "NO-VERDICT",
+     "reason": "429 quota"
+    }
+   ],
+   "findings": [
+    "old-tokenizer red arm not a committed assertion -> APPLIED c02f71d6",
+    "bare_token_ids refactor not on the ticket -> APPLIED c02f71d6: acceptance criteria record the complexity-gate reason"
+   ]
+  },
+  {
+   "round": 2,
+   "executor": "claude-sequential",
+   "lanes": [
+    {
+     "lane": 1,
+     "model": "claude-sonnet-5",
+     "family": "claude",
+     "role": "degraded-same-family",
+     "judged": "c02f71d6",
+     "verdict": "PASS",
+     "agent": "a87db8061d270a397",
+     "findings": []
+    },
+    {
+     "lane": 2,
+     "model": "claude-sonnet-5",
+     "family": "claude",
+     "role": "degraded-same-family",
+     "agent": "aa87e169356d745c2",
+     "attempts": [
+      {
+       "judged": "c02f71d6",
+       "verdict": "FAIL",
+       "findings": [
+        "2b11285e message: '72 vs 71' at 2c370e21 is false, CI says 71 vs 70 (measured)",
+        "same message: '71 vs 70' for the branch range is false, 74 vs 73 (measured)",
+        "test comment: spellings claimed real are mostly synthetic (measured)"
+       ],
+       "applied": "14a0a3c4 (comment fixed; commit-message figures corrected in 14a0a3c4's message and the squash message, since the pushed message cannot be rewritten)"
+      },
+      {
+       "judged": "14a0a3c478dff91c75cbf094296f7a23c94b3da0",
+       "verdict": "PASS",
+       "findings": [
+        "cosmetic: 'PR merge ref' wording (no_change_needed)"
+       ]
+      }
+     ]
+    },
+    {
+     "lane": 3,
+     "model": "claude-sonnet-5",
+     "family": "claude",
+     "role": "degraded-same-family",
+     "judged": "c02f71d6",
+     "verdict": "PASS",
+     "agent": "aae72a3363dd566c7",
+     "findings": [],
+     "note": "sibling gate changelog_release_membership_witness.rs ids_in_tag() has the same tokenizer, out of scope, follow-up filed"
+    }
+   ]
+  }
+ ],
+ "note": "c02f71d6 -> 14a0a3c4 is a doc-comment-only change."
+}
