@@ -27082,6 +27082,26 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
   labels:
   - kind:code
   notes: 'Milestone v0.1.619. Its ledger-hygiene row reads: PMAT-465 (reprioritise v0.2.0) superseded by this plan; PMAT-956 marked planned but the arc is done; each row closed or re-statused with the sha that proves it. PR #2135 is that row.'
+- id: PMAT-2136
+  github_issue: 2136
+  item_type: bug
+  title: release_story_derivation_witness's PMAT-id extraction disagrees with the plan's grep on hyphen-prefixed ids
+  status: inprogress
+  priority: high
+  assigned_to: null
+  created: 2026-09-24T00:15:00Z
+  updated: 2026-09-24T00:15:00Z
+  spec: null
+  acceptance_criteria:
+  - 'ids_in_range counts ids exactly as grep -oE PMAT-[0-9]+ does, including foo-PMAT-N and PMAT-N-suffix'
+  - a constructed-message red arm fails on the old tokenizer, committed as an assertion
+  - 'the file must pass the local pre-commit complexity gate (cognitive 25) to be committable at all: the roster rule''s two inline copies of the strict tokenizer move, unchanged, into bare_token_ids'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'Epic #2124 (v0.1.619). main went red on 2c370e21 for this reason.'
 - id: PMAT-2131
   github_issue: 2131
   item_type: task
