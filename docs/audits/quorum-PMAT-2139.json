@@ -1,0 +1,157 @@
+{
+  "ticket": "PMAT-2139",
+  "base": "origin/fix/hybrid-uint-adapter-2138",
+  "base_resolved": "origin/fix/hybrid-uint-adapter-2138",
+  "base_note": "no origin/origin/fix/hybrid-uint-adapter-2138 exists; judged against the local ref",
+  "head": "c27d9c473f7da8c2bab9aa736a360c5e25f3101a",
+  "diff_sha256": "de13ab34b4f90a6148ac8962e6ced0e957667e605e690e49e27922826167f03c",
+  "width": 2,
+  "executor": "agy",
+  "prompt_mode": "inline",
+  "prompt_bytes": 27604,
+  "author": {
+    "model": "claude-opus-5-5",
+    "family": "claude",
+    "source": "flag"
+  },
+  "agreed": true,
+  "lanes": [
+    {
+      "lane": 1,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff perfectly matches the requirements in PMAT-2139. \n\n- `float` builds and matches CPython under plain `--verify`: This is implemented by extending `uint_adapter` to `scalar_adapter` in `crates/xpile-ffi-manifest/src/lib.rs` to support `Type::F32`, rounding and widening identically to `ctypes.c_float`.\n- `unsigned long long` is checked and reported, not skipped: By adding mappings for `Type::F32`, `Type::CULong`, and `Type::CLong` in `ctypes_name` in `crates/xpile/src/main.rs`, they are no longer skipped as non-ABI-mappable. `unsigned long long` falls back to the native type and correctly triggers the `E0308` type mismatch.\n- A red arm per type is provided: Tests `float_boundary_matches_cpython_without_repair`, `unsigned_long_boundary_is_reported_not_skipped`, `unsigned_long_repair_converges_even_above_i64_max`, and `long_long_boundary_is_compared_not_skipped` in `crates/xpile/tests/hybrid_scalar_widths.rs` rigorously check each of these conditions.\n- No unrequested changes or weakened gates were identified.",
+      "findings": [],
+      "raw_bytes": 3328,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.1-pro-high",
+      "model_measured": "gemini-3.1-pro-high",
+      "model_source": "measured",
+      "family": "gemini",
+      "role": "independent",
+      "fallback": {
+        "judged_by": "gemini-3.1-pro-high",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gemini-3.1-pro-high",
+            "family": "gemini",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    },
+    {
+      "lane": 2,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "PMAT-2139 is verified and confirmed. The diff satisfies all ticket requirements and acceptance criteria:\n1. `float` boundaries: `scalar_adapter` bridges `f64 <-> f32` matching `ctypes.c_float`, and `retype_float_ffi_sites` correctly handles `Type::F32` returns. `hybrid_float32` builds and matches CPython under plain `xpile hybrid --verify` without repair (verified via `float_boundary_matches_cpython_without_repair`).\n2. `unsigned long long` boundaries: `ctypes_name` maps `Type::CULong` to `c_ulonglong`. Because `u64 -> i64` has no lossless bridge, `scalar_adapter` declines it; `--verify` now builds the workspace, honestly reports the expected `E0308` type mismatch, and exits non-zero rather than skipping at exit 0 (verified via `unsigned_long_boundary_is_reported_not_skipped`). Furthermore, `--verify --repair` converges on the call site (verified via `unsigned_long_repair_converges_even_above_i64_max`).\n3. `long long` boundaries: `ctypes_name` maps `Type::CLong` to `c_longlong`, and `--verify` executes and matches CPython (verified via `long_long_boundary_is_compared_not_skipped`).\n4. Red arms and quality gates: All 4 integration tests in `crates/xpile/tests/hybrid_scalar_widths.rs` pass, unit tests in `xpile-ffi-manifest` pass, `cargo fmt --all -- --check` is clean, `cargo clippy --workspace --all-targets -- -D warnings` is clean, and `cargo deny check advisories` is clean. No gates were weakened and no unrequested changes were introduced.",
+      "findings": [],
+      "raw_bytes": 4247,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.8-flash-high",
+      "model_measured": "gemini-3.8-flash-high",
+      "model_source": "measured",
+      "family": "gemini",
+      "role": "independent",
+      "fallback": {
+        "judged_by": "gemini-3.8-flash-high",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gemini-3.8-flash-high",
+            "family": "gemini",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    },
+    {
+      "lane": 3,
+      "model": "claude-haiku-4-5",
+      "model_source": "declared",
+      "family": "claude",
+      "agent": "claude-code-subagent",
+      "judged": "c27d9c47",
+      "verdict": "PASS",
+      "summary": "float, unsigned long long and long long boundaries are checked, not skipped; hybrid_float32 MATCHes (independent ctypes run agrees), hybrid_ulong exits non-zero on the u64 E0308 and --repair converges, hybrid_long MATCHes; hybrid_scalar_widths 4/4, hybrid_repair 8/8, scalar_adapter 5/5 measured",
+      "findings": []
+    }
+  ],
+  "dissent": [],
+  "dedup": [],
+  "uncovered": [],
+  "coverage_source": "lanes",
+  "partial": false,
+  "partial_reasons": [],
+  "fallback": {
+    "same_family_width": 1,
+    "chain": [
+      {
+        "model": "gemini-3.1-pro-high",
+        "family": "gemini",
+        "disposition": "configured"
+      },
+      {
+        "model": "gemini-3.8-flash-high",
+        "family": "gemini",
+        "disposition": "configured"
+      },
+      {
+        "model": "gpt-oss-120b-medium",
+        "family": "openai",
+        "disposition": "fallback"
+      },
+      {
+        "model": "qwen3.5",
+        "family": "qwen",
+        "disposition": "not-run",
+        "why": "no quorum.local_lane in the config — the aprender lane has no model to load"
+      },
+      {
+        "model": "claude-opus-4-6-thinking",
+        "family": "claude",
+        "disposition": "width",
+        "why": "same family as the author: at most 1 lane, recorded role width, counted toward no floor (R-15a)"
+      },
+      {
+        "model": "claude-sonnet-4-6",
+        "family": "claude",
+        "disposition": "width",
+        "why": "same family as the author: at most 1 lane, recorded role width, counted toward no floor (R-15a)"
+      }
+    ],
+    "precheck": [
+      {
+        "family": "gemini",
+        "model": "gemini-3.1-pro-high",
+        "probe": 1,
+        "outcome": "live"
+      }
+    ],
+    "prah": {
+      "source": "install-receipt",
+      "path": "/home/noah/.claude/skills/paiml-implement/bin/prah"
+    }
+  },
+  "auto_merge": {
+    "checked": true,
+    "was_armed": false,
+    "disarmed": false,
+    "note": "auto-merge not armed"
+  },
+  "lint": {
+    "ok": true,
+    "output": "receipt complete: kind=artifact lanes=2 author=claude-opus-5-5/claude"
+  },
+  "degraded": "same-family",
+  "lane_mix": "2 agy + 1 claude-haiku-4-5 (operator rule, 2026-09-23)"
+}
