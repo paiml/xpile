@@ -27063,3 +27063,21 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
   labels:
   - kind:code
   notes: 'Epic #2124. Partly landed: 2c370e21 (#2130) pinned every CI cargo install and added XPILE-LEAN-PAIRING-001. Open: making kani / lake-build / lean-models block, an owner decision (ruleset-reflip).'
+- id: PMAT-2124
+  github_issue: 2124
+  item_type: epic
+  title: EPIC v0.1.619 — Ledgers the tools can read, proofs that can block
+  status: inprogress
+  priority: high
+  assigned_to: null
+  created: 2026-09-23T19:00:00Z
+  updated: 2026-09-24T00:10:00Z
+  spec: null
+  acceptance_criteria:
+  - 'every row of the epic issue is done, re-deferred with a reason, or waiting on a named owner decision'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'Milestone v0.1.619. Ledger-hygiene row: PR #2135.'
