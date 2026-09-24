@@ -3242,4 +3242,83 @@ mod tests {
             other => panic!("expected Print, got {other:?}"),
         }
     }
+
+    /// PMAT-2138: `uint_adapter` over a reconciled Python -> C boundary `f`.
+    fn adapter_for(params: Vec<(&str, Type)>, ret: Type) -> Option<String> {
+        let mut modules = vec![
+            module(
+                "app",
+                SourceLang::Python,
+                vec![boundary(SourceLang::Python, SourceLang::C, "f")],
+            ),
+            c_fn("f", params, ret),
+        ];
+        resolve_boundary_to_langs(&mut modules);
+        let manifest = FfiManifest::reconcile(&modules).expect("reconciles");
+        uint_adapter(&manifest.entries[0], &modules)
+    }
+
+    #[test]
+    fn uint_adapter_casts_an_unsigned_param_and_return_like_ctypes_c_uint() {
+        let a = adapter_for(vec![("x", Type::CUInt)], Type::CUInt).expect("CUInt boundary");
+        assert!(
+            a.contains("fn f(a0: i64) -> i64 {\n    ffi_shims::f_shim(a0 as u32) as i64\n}"),
+            "{a}"
+        );
+        assert!(
+            !a.contains("use ffi_shims"),
+            "the adapter replaces the alias: {a}"
+        );
+    }
+
+    #[test]
+    fn uint_adapter_passes_other_scalars_through_at_the_wrappers_own_type() {
+        // CUInt + f64 params, signed int return: only the CUInt arg is cast,
+        // and a non-CUInt return gets no trailing cast.
+        let a = adapter_for(vec![("x", Type::CUInt), ("y", Type::F64)], Type::I64)
+            .expect("mixed boundary with one CUInt");
+        assert!(
+            a.contains("fn f(a0: i64, a1: f64) -> i64 {\n    ffi_shims::f_shim(a0 as u32, a1)\n}"),
+            "{a}"
+        );
+    }
+
+    #[test]
+    fn uint_adapter_declines_everything_it_does_not_model() {
+        // No CUInt at all: the plain alias is right.
+        assert_eq!(adapter_for(vec![("x", Type::I64)], Type::I64), None);
+        // CULong: u64 -> i64 is lossy above 2^63, where ctypes returns a larger int.
+        assert_eq!(adapter_for(vec![("x", Type::CULong)], Type::CULong), None);
+        assert_eq!(adapter_for(vec![("x", Type::CUInt)], Type::CULong), None);
+        // A non-scalar alongside a CUInt: the wrapper's type is not a plain pass-through.
+        assert_eq!(
+            adapter_for(vec![("x", Type::CUInt), ("s", Type::Str)], Type::I64),
+            None
+        );
+    }
+
+    #[test]
+    fn uint_adapter_is_only_for_python_callers_of_c() {
+        let mut modules = vec![
+            module(
+                "app",
+                SourceLang::Python,
+                vec![boundary(SourceLang::Python, SourceLang::C, "f")],
+            ),
+            c_fn("f", vec![("x", Type::CUInt)], Type::CUInt),
+        ];
+        resolve_boundary_to_langs(&mut modules);
+        let manifest = FfiManifest::reconcile(&modules).expect("reconciles");
+        let mut entry = manifest.entries[0].clone();
+        assert!(
+            uint_adapter(&entry, &modules).is_some(),
+            "control: Python -> C adapts"
+        );
+        entry.from_lang = SourceLang::Shell;
+        assert_eq!(
+            uint_adapter(&entry, &modules),
+            None,
+            "a non-Python caller keeps the alias"
+        );
+    }
 }
