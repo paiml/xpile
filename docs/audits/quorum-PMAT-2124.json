@@ -1,0 +1,285 @@
+{
+ "ticket": "PMAT-2124",
+ "base": "origin/main",
+ "base_resolved": "origin/main",
+ "base_note": "no origin/origin/main exists; judged against the local ref",
+ "head": "6922377445c1b55eefc7ea79e1077e847d582289",
+ "diff_sha256": "f430fe9cca6b7ba19532402cc3eaeb69692cd5f67864f23b9cf77b3971822523",
+ "width": 3,
+ "executor": "agy",
+ "prompt_mode": "inline",
+ "prompt_bytes": 6004,
+ "author": {
+  "model": "claude-opus-5-5",
+  "family": "claude",
+  "source": "flag"
+ },
+ "agreed": true,
+ "lanes": [
+  {
+   "lane": 1,
+   "status": "SUCCESS",
+   "verdict": "PASS",
+   "summary": "The diff correctly updates the roadmap to reflect the PMAT-2124 ledger-hygiene row requirements. PMAT-465 is marked cancelled and superseded by the new epics. PMAT-956 is marked done with the associated commit SHAs provided. PMAT-2123 is marked done with its landed SHA. PMAT-2119 notes the partly landed SHA and explicitly leaves the remaining work to 'an owner decision', which aligns perfectly with the acceptance criteria in PMAT-2124.",
+   "findings": [],
+   "raw_bytes": 3229,
+   "err_bytes": 62,
+   "envelope_status": "SUCCESS",
+   "verdict_source": "structured_output",
+   "grounding_check": "parity",
+   "model": "gemini-3.1-pro-high",
+   "model_measured": "gemini-3.1-pro-high",
+   "model_source": "measured",
+   "family": "gemini",
+   "role": "independent",
+   "fallback": {
+    "judged_by": "gemini-3.1-pro-high",
+    "exhausted": false,
+    "attempts": [
+     {
+      "model": "gemini-3.1-pro-high",
+      "family": "gemini",
+      "outcome": "answered"
+     }
+    ],
+    "skipped": []
+   }
+  },
+  {
+   "lane": 2,
+   "status": "SUCCESS",
+   "verdict": "PASS",
+   "summary": "Diff verified against ticket PMAT-2124 and its ledger hygiene row. All receipt claims in docs/roadmaps/roadmap.yaml are backed by existing commit SHAs and artifacts: PMAT-956 cites its landing SHAs (#1812-#1920 shipped in v0.1.616 / adc9da79); PMAT-465 is marked cancelled and superseded by release epics #2124-#2128; PMAT-2123 is marked done citing 9a3a336b (#2129) and quorum-PMAT-2123.json; PMAT-2119 notes 2c370e21 (#2130); and epic PMAT-2124 is registered as inprogress. All roadmap validation gates (roadmap_pmat_schema, roadmap_ledger_parses, roadmap_registration, release_story_derivation_witness) pass, no gates are weakened, and no unrequested changes were introduced. Verdict is PASS.",
+   "findings": [],
+   "raw_bytes": 2930,
+   "err_bytes": 0,
+   "envelope_status": "SUCCESS",
+   "verdict_source": "structured_output",
+   "grounding_check": "parity",
+   "model": "gemini-3.8-flash-high",
+   "model_measured": "gemini-3.8-flash-high",
+   "model_source": "measured",
+   "family": "gemini",
+   "role": "independent",
+   "fallback": {
+    "judged_by": "gemini-3.8-flash-high",
+    "exhausted": false,
+    "attempts": [
+     {
+      "model": "gemini-3.8-flash-high",
+      "family": "gemini",
+      "outcome": "answered"
+     }
+    ],
+    "skipped": []
+   }
+  },
+  {
+   "lane": 3,
+   "status": "SUCCESS",
+   "verdict": "PASS",
+   "summary": "Verified that the diff against PMAT-2124 accurately performs ledger hygiene on docs/roadmaps/roadmap.yaml without violating any schema constraints or weakening gates. All cited commit receipts (adc9da79, 60450277, bf488fbf, a286f19c, 141ca917, 4a46b0ef, bc81fd68, 9a3a336b, 2c370e21) exist and were verified against git history. The ledger parses cleanly with pmat work status and all roadmap integrity tests pass.",
+   "findings": [
+    {
+     "claim": "PMAT-956 status flipped to done with full commit receipts (60450277, bf488fbf, a286f19c, 141ca917, 4a46b0ef, bc81fd68, adc9da79). Measured: all commits exist in git history, shipped in v0.1.616, and cite PMAT-956.",
+     "file": "docs/roadmaps/roadmap.yaml",
+     "grounding": "measured",
+     "line": 3925
+    },
+    {
+     "claim": "PMAT-465 status updated to cancelled with note explaining supersession by release epics #2124-#2128 under epic #2124 hygiene row.",
+     "file": "docs/roadmaps/roadmap.yaml",
+     "grounding": "cited",
+     "line": 9042
+    },
+    {
+     "claim": "PMAT-2123 status updated to done with commit receipt 9a3a336b (#2129). Measured: commit verified in git log.",
+     "file": "docs/roadmaps/roadmap.yaml",
+     "grounding": "measured",
+     "line": 27028
+    },
+    {
+     "claim": "PMAT-2119 notes updated citing landed PR #2130 (2c370e21) while remaining inprogress for the owner ruleset decision. Measured: commit verified in git log.",
+     "file": "docs/roadmaps/roadmap.yaml",
+     "grounding": "measured",
+     "line": 27063
+    },
+    {
+     "claim": "PMAT-2124 registered as an epic in roadmap.yaml with valid schema fields, resolving registration failure in roadmap_registration.rs. Measured: cargo test for roadmap_pmat_schema, ledger_integrity_witness, and pmat work status PMAT-2124 pass.",
+     "file": "docs/roadmaps/roadmap.yaml",
+     "grounding": "measured",
+     "line": 27067
+    }
+   ],
+   "raw_bytes": 4853,
+   "err_bytes": 62,
+   "envelope_status": "SUCCESS",
+   "verdict_source": "structured_output",
+   "grounding_check": "parity",
+   "model": "gemini-3.7-flash-high",
+   "model_measured": "gemini-3.7-flash-high",
+   "model_source": "measured",
+   "family": "gemini",
+   "role": "independent",
+   "fallback": {
+    "judged_by": "gemini-3.7-flash-high",
+    "exhausted": false,
+    "attempts": [
+     {
+      "model": "gemini-3.7-flash-high",
+      "family": "gemini",
+      "outcome": "answered"
+     }
+    ],
+    "skipped": []
+   }
+  }
+ ],
+ "dissent": [],
+ "dedup": [
+  {
+   "file": "docs/roadmaps/roadmap.yaml",
+   "line": 3925,
+   "lanes_agreeing": [
+    3
+   ],
+   "claims": [
+    "PMAT-956 status flipped to done with full commit receipts (60450277, bf488fbf, a286f19c, 141ca917, 4a46b0ef, bc81fd68, adc9da79). Measured: all commits exist in git history, shipped in v0.1.616, and cite PMAT-956."
+   ]
+  },
+  {
+   "file": "docs/roadmaps/roadmap.yaml",
+   "line": 9042,
+   "lanes_agreeing": [
+    3
+   ],
+   "claims": [
+    "PMAT-465 status updated to cancelled with note explaining supersession by release epics #2124-#2128 under epic #2124 hygiene row."
+   ]
+  },
+  {
+   "file": "docs/roadmaps/roadmap.yaml",
+   "line": 27028,
+   "lanes_agreeing": [
+    3
+   ],
+   "claims": [
+    "PMAT-2123 status updated to done with commit receipt 9a3a336b (#2129). Measured: commit verified in git log."
+   ]
+  },
+  {
+   "file": "docs/roadmaps/roadmap.yaml",
+   "line": 27063,
+   "lanes_agreeing": [
+    3
+   ],
+   "claims": [
+    "PMAT-2119 notes updated citing landed PR #2130 (2c370e21) while remaining inprogress for the owner ruleset decision. Measured: commit verified in git log."
+   ]
+  },
+  {
+   "file": "docs/roadmaps/roadmap.yaml",
+   "line": 27067,
+   "lanes_agreeing": [
+    3
+   ],
+   "claims": [
+    "PMAT-2124 registered as an epic in roadmap.yaml with valid schema fields, resolving registration failure in roadmap_registration.rs. Measured: cargo test for roadmap_pmat_schema, ledger_integrity_witness, and pmat work status PMAT-2124 pass."
+   ]
+  }
+ ],
+ "uncovered": [],
+ "coverage_source": "lanes",
+ "partial": true,
+ "partial_reasons": [
+  "lane 1: non-empty .err (62 bytes, 1 line(s) beyond agy-lane's workspace narration)",
+  "lane 3: non-empty .err (62 bytes, 1 line(s) beyond agy-lane's workspace narration)"
+ ],
+ "fallback": {
+  "same_family_width": 1,
+  "chain": [
+   {
+    "model": "gemini-3.1-pro-high",
+    "family": "gemini",
+    "disposition": "configured"
+   },
+   {
+    "model": "gemini-3.8-flash-high",
+    "family": "gemini",
+    "disposition": "configured"
+   },
+   {
+    "model": "gemini-3.7-flash-high",
+    "family": "gemini",
+    "disposition": "configured"
+   },
+   {
+    "model": "gpt-oss-120b-medium",
+    "family": "openai",
+    "disposition": "fallback"
+   },
+   {
+    "model": "qwen3.5",
+    "family": "qwen",
+    "disposition": "not-run",
+    "why": "no quorum.local_lane in the config — the aprender lane has no model to load"
+   },
+   {
+    "model": "claude-opus-4-6-thinking",
+    "family": "claude",
+    "disposition": "width",
+    "why": "same family as the author: at most 1 lane, recorded role width, counted toward no floor (R-15a)"
+   },
+   {
+    "model": "claude-sonnet-4-6",
+    "family": "claude",
+    "disposition": "width",
+    "why": "same family as the author: at most 1 lane, recorded role width, counted toward no floor (R-15a)"
+   }
+  ],
+  "precheck": [
+   {
+    "family": "gemini",
+    "model": "gemini-3.1-pro-high",
+    "probe": 1,
+    "outcome": "live"
+   }
+  ],
+  "prah": {
+   "source": "install-receipt",
+   "path": "/home/noah/.claude/skills/paiml-implement/bin/prah"
+  }
+ },
+ "auto_merge": {
+  "checked": true,
+  "was_armed": false,
+  "disarmed": false,
+  "note": "auto-merge not armed"
+ },
+ "lint": {
+  "ok": true,
+  "output": "receipt complete: kind=artifact lanes=3 author=claude-opus-5-5/claude"
+ },
+ "rounds_history": [
+  {
+   "round": 1,
+   "judged": "a3434594",
+   "verdicts": [
+    "FAIL",
+    "FAIL",
+    "FAIL"
+   ],
+   "models": [
+    "gemini-3.1-pro-high",
+    "gemini-3.8-flash-high",
+    "gemini-3.7-flash-high"
+   ],
+   "findings": [
+    "PMAT-956 flipped to done without a receipt (cited) -> APPLIED 69223774",
+    "PMAT-465 cancelled without a reason (cited) -> APPLIED 69223774",
+    "ticket PMAT-2124 row did not carry the hygiene row's scope -> APPLIED: row notes quote it"
+   ],
+   "raw": "kept outside the repo; not committed"
+  }
+ ]
+}
