@@ -3925,7 +3925,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-956: [frontier/provable-model-as-code] emit a small classical-ML model AS proven code — a proven Rust function + const weights + a Lean OLS-minimizer-uniqueness certificate — superseding the serialized .apr blob for small-parameter models. For linear/logistic regression a fitted model is a tiny pure function over const weights; it should ship as a PROVEN Rust fn (with the predict path) carrying a Lean certificate that the OLS minimizer is unique (the normal-equation solution), NOT an opaque .apr deserialization. aprender already binds OLS fit to Lean via #[contract("linear-models-v1", equation = "ols_fit")]; the missing piece is the EMIT — lower the fitted model into meta-HIR const + fn and attach the uniqueness proof. .apr survives only where parameters dominate (LLMs); the boundary is the v1/v2 .apr magic byte.'
-  status: planned
+  status: done
   priority: medium
   created: 2026-06-25T00:00:00Z
   acceptance_criteria:
@@ -3936,7 +3936,7 @@ roadmap:
   subtasks: []
   estimated_effort: null
   labels: []
-  notes: 'PMAT-985 update (2026-06-25): rank 3 on the forward_ev_ranking. v1 (proven predict + const weights, core-Lean only) is TRACTABLE but THIN; the load-bearing OLS-minimizer-uniqueness proof is MATHLIB-gated and xpile deliberately avoids Mathlib — so this needs an explicit STRATEGIC decision (carry a Mathlib lane vs. ship the thin v1 vs. defer) before any work starts. Do NOT drift into it as a reflexive slice.'
+  notes: 'Done: the arc landed 2026-07-04..06 and shipped in v0.1.616 (adc9da79, #1840). Receipts: 60450277 (#1812) --emit-crate universal .wasm; bf488fbf (#1814) Mathlib OLS-uniqueness certificate; a286f19c (#1824) general k-parameter OLS uniqueness; 141ca917 (#1825) C-OLS-MODEL-UNIQUENESS under pv; 4a46b0ef (#1827) citation emitted for fitted models; bc81fd68 (#1920) discrimination witness. Status was left at planned; corrected 2026-09-23 under epic #2124 ledger hygiene.'
 - id: PMAT-950
   github_issue: null
   item_type: task
@@ -9042,7 +9042,7 @@ roadmap:
   github_issue: 496
   item_type: task
   title: 'PMAT-465: Reprioritize v0.2.0 roadmap by expected value; freeze Diamond depth at 13; encode autonomous high-EV pickup order'
-  status: inprogress
+  status: cancelled
   priority: high
   created: 2026-06-11T00:00:00Z
   acceptance_criteria:
@@ -9050,6 +9050,7 @@ roadmap:
   - "Diamond depth ratchet frozen at depth-13 (banner in sub/diamond-taxonomy.md); no depth-14+ broadening as default/background work."
   - "Ledger reconciled: forward priorities PMAT-466..469 tracked here; note recorded that PMAT-444..464 live only in git + CHANGELOG (canonical record per PMAT-001), not this ledger."
   - "PR #496 merges green."
+  notes: 'Cancelled 2026-09-23: superseded. Its goal (reprioritise the v0.2.0 roadmap by expected value) is now carried by the five tagged release epics #2124 (v0.1.619), #2125, #2126, #2127, #2128 (v0.2.0), each with done_when rows. Closed under the epic #2124 ledger-hygiene row.'
 - id: PMAT-466
   github_issue: null
   item_type: task
@@ -27027,7 +27028,7 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
   github_issue: 2123
   item_type: bug
   title: pmat work cannot read the roadmap — 67 rows carry priority P0/P1, so every pmat work status and quorum-review call fails
-  status: inprogress
+  status: done
   priority: high
   assigned_to: null
   created: 2026-09-23T19:00:00Z
@@ -27042,7 +27043,7 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
   estimated_effort: null
   labels:
   - kind:code
-  notes: 'Epic #2124 (v0.1.619). PR #2129.'
+  notes: 'Landed: 9a3a336b (#2129), 2026-09-23. Quorum docs/audits/quorum-PMAT-2123.json.'
 - id: PMAT-2119
   github_issue: 2119
   item_type: bug
@@ -27062,4 +27063,22 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
   estimated_effort: null
   labels:
   - kind:code
-  notes: 'Epic #2124 (v0.1.619).'
+  notes: 'Epic #2124. Partly landed: 2c370e21 (#2130) pinned every CI cargo install and added XPILE-LEAN-PAIRING-001. Open: making kani / lake-build / lean-models block, an owner decision (ruleset-reflip).'
+- id: PMAT-2124
+  github_issue: 2124
+  item_type: epic
+  title: EPIC v0.1.619 — Ledgers the tools can read, proofs that can block
+  status: inprogress
+  priority: high
+  assigned_to: null
+  created: 2026-09-23T19:00:00Z
+  updated: 2026-09-24T00:10:00Z
+  spec: null
+  acceptance_criteria:
+  - 'every row of the epic issue is done, re-deferred with a reason, or waiting on a named owner decision'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'Milestone v0.1.619. Its ledger-hygiene row reads: PMAT-465 (reprioritise v0.2.0) superseded by this plan; PMAT-956 marked planned but the arc is done; each row closed or re-statused with the sha that proves it. PR #2135 is that row.'
