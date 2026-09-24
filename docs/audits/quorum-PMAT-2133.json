@@ -1,0 +1,246 @@
+{
+  "ticket": "PMAT-2133",
+  "base": "origin/main",
+  "base_resolved": "origin/main",
+  "base_note": "no origin/origin/main exists; judged against the local ref",
+  "head": "6aa5035929ad8dfbd730618661583d27b627a24c",
+  "diff_sha256": "ea1e3dfe447f6e334613240dc04e306e89c435333e4c6c5044f1f832bc9ef98a",
+  "width": 3,
+  "executor": "agy",
+  "prompt_mode": "inline",
+  "prompt_bytes": 18776,
+  "author": {
+    "model": "claude-opus-5-5",
+    "family": "claude",
+    "source": "flag"
+  },
+  "agreed": true,
+  "lanes": [
+    {
+      "lane": 1,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff successfully addresses PMAT-2133 by refactoring `published_commands`, `advertised_subcommands`, and `precondition_claims` into smaller helper functions to reduce complexity. The original behavior is preserved exactly, including loop logic, short-circuiting, and string parsing edge cases. The parked headline correction has also been accurately applied to the documentation comments, and the roadmap YAML is updated correctly. No regressions or unexpected behavior were found.",
+      "findings": [],
+      "raw_bytes": 2223,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.1-pro-high",
+      "model_measured": "gemini-3.1-pro-high",
+      "model_source": "measured",
+      "family": "gemini",
+      "role": "independent",
+      "fallback": {
+        "judged_by": "gemini-3.1-pro-high",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gemini-3.1-pro-high",
+            "family": "gemini",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    },
+    {
+      "lane": 2,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "Diff satisfies all acceptance criteria of PMAT-2133 with no refuting findings. The three complex functions were decomposed into modular helpers without altering extraction semantics, complexity gates report 0 errors, all 17 tests pass, the parked headline doc correction lands, and no gate was weakened.",
+      "findings": [
+        {
+          "claim": "The headline doc comment correction (honesty lead a) lands in book_published_command_witness.rs as required by acceptance criterion 3.",
+          "file": "crates/xpile/tests/book_published_command_witness.rs",
+          "grounding": "cited",
+          "line": 1
+        },
+        {
+          "claim": "Complexity check passes with 0 errors: `pmat analyze complexity --file crates/xpile/tests/book_published_command_witness.rs --max-cyclomatic 30 --max-cognitive 25` confirms all functions satisfy thresholds (max cyclomatic 8, max cognitive 25).",
+          "file": "crates/xpile/tests/book_published_command_witness.rs",
+          "grounding": "measured",
+          "line": 228
+        },
+        {
+          "claim": "Test suite executes with identical tests and passing results: `cargo test --test book_published_command_witness` passed 17/17 tests including the anti-vacuity red arm control test `a_command_known_to_fail_is_reported_as_failing`.",
+          "file": "crates/xpile/tests/book_published_command_witness.rs",
+          "grounding": "measured",
+          "line": 883
+        },
+        {
+          "claim": "Roadmap entry for PMAT-2133 is added in docs/roadmaps/roadmap.yaml documenting the acceptance criteria and issue metadata.",
+          "file": "docs/roadmaps/roadmap.yaml",
+          "grounding": "cited",
+          "line": 27066
+        }
+      ],
+      "raw_bytes": 4545,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.8-flash-high",
+      "model_measured": "gemini-3.8-flash-high",
+      "model_source": "measured",
+      "family": "gemini",
+      "role": "independent",
+      "fallback": {
+        "judged_by": "gemini-3.8-flash-high",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gemini-3.8-flash-high",
+            "family": "gemini",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    },
+    {
+      "lane": 3,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "Diff verification for ticket PMAT-2133 passed all criteria:\n\n1. Complexity Gate Compliance (PMAT-2133):\n   - Measured: `pmat analyze complexity --file crates/xpile/tests/book_published_command_witness.rs` reported 0 errors (down from 4 errors on origin/main where `published_commands`, `advertised_subcommands`, and `precondition_claims` exceeded thresholds). Max cyclomatic complexity is now 8 (limit: 20) and max cognitive complexity is 25 (limit: 30).\n   - Refactoring extracted clean helper functions (`Fence`, `command_start`, `join_multiline`, `transcript_after`, `drop_transcript_lines`, `mark_chained_after_cd`, `subcommand_names`, `comment_claims`, `sentence_claims`) with exact semantic preservation.\n\n2. Test Suite Equivalence:\n   - Measured: `cargo test --test book_published_command_witness` ran 17 tests with result `17 passed; 0 failed; 0 ignored`.\n   - Measured: `cargo check --all-targets` completed cleanly with exit code 0.\n\n3. Parked Headline Correction:\n   - Cited: Updated the module headline comment in `crates/xpile/tests/book_published_command_witness.rs` lines 1–11 clarifying the distinction between set-level command execution and the earlier single-command check in `cli_docs_drift.rs`.\n\n4. Roadmap Entry:\n   - Cited/Measured: `docs/roadmaps/roadmap.yaml` registers `PMAT-2133` accurately and `pmat work status PMAT-2133` parses and exits 0.\n\nNo regressions, gate weakenings, or out-of-scope changes were detected.",
+      "findings": [],
+      "raw_bytes": 4717,
+      "err_bytes": 62,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.7-flash-high",
+      "model_measured": "gemini-3.7-flash-high",
+      "model_source": "measured",
+      "family": "gemini",
+      "role": "independent",
+      "fallback": {
+        "judged_by": "gemini-3.7-flash-high",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gemini-3.7-flash-high",
+            "family": "gemini",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    }
+  ],
+  "dissent": [],
+  "dedup": [
+    {
+      "file": "crates/xpile/tests/book_published_command_witness.rs",
+      "line": 1,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "The headline doc comment correction (honesty lead a) lands in book_published_command_witness.rs as required by acceptance criterion 3."
+      ]
+    },
+    {
+      "file": "crates/xpile/tests/book_published_command_witness.rs",
+      "line": 228,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "Complexity check passes with 0 errors: `pmat analyze complexity --file crates/xpile/tests/book_published_command_witness.rs --max-cyclomatic 30 --max-cognitive 25` confirms all functions satisfy thresholds (max cyclomatic 8, max cognitive 25)."
+      ]
+    },
+    {
+      "file": "crates/xpile/tests/book_published_command_witness.rs",
+      "line": 883,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "Test suite executes with identical tests and passing results: `cargo test --test book_published_command_witness` passed 17/17 tests including the anti-vacuity red arm control test `a_command_known_to_fail_is_reported_as_failing`."
+      ]
+    },
+    {
+      "file": "docs/roadmaps/roadmap.yaml",
+      "line": 27066,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "Roadmap entry for PMAT-2133 is added in docs/roadmaps/roadmap.yaml documenting the acceptance criteria and issue metadata."
+      ]
+    }
+  ],
+  "uncovered": [],
+  "coverage_source": "lanes",
+  "partial": true,
+  "partial_reasons": [
+    "lane 3: non-empty .err (62 bytes, 1 line(s) beyond agy-lane's workspace narration)"
+  ],
+  "fallback": {
+    "same_family_width": 1,
+    "chain": [
+      {
+        "model": "gemini-3.1-pro-high",
+        "family": "gemini",
+        "disposition": "configured"
+      },
+      {
+        "model": "gemini-3.8-flash-high",
+        "family": "gemini",
+        "disposition": "configured"
+      },
+      {
+        "model": "gemini-3.7-flash-high",
+        "family": "gemini",
+        "disposition": "configured"
+      },
+      {
+        "model": "gpt-oss-120b-medium",
+        "family": "openai",
+        "disposition": "fallback"
+      },
+      {
+        "model": "qwen3.5",
+        "family": "qwen",
+        "disposition": "not-run",
+        "why": "no quorum.local_lane in the config — the aprender lane has no model to load"
+      },
+      {
+        "model": "claude-opus-4-6-thinking",
+        "family": "claude",
+        "disposition": "width",
+        "why": "same family as the author: at most 1 lane, recorded role width, counted toward no floor (R-15a)"
+      },
+      {
+        "model": "claude-sonnet-4-6",
+        "family": "claude",
+        "disposition": "width",
+        "why": "same family as the author: at most 1 lane, recorded role width, counted toward no floor (R-15a)"
+      }
+    ],
+    "precheck": [
+      {
+        "family": "gemini",
+        "model": "gemini-3.1-pro-high",
+        "probe": 1,
+        "outcome": "live"
+      }
+    ],
+    "prah": {
+      "source": "install-receipt",
+      "path": "/home/noah/.claude/skills/paiml-implement/bin/prah"
+    }
+  },
+  "auto_merge": {
+    "checked": true,
+    "was_armed": false,
+    "disarmed": false,
+    "note": "auto-merge not armed"
+  },
+  "lint": {
+    "ok": true,
+    "output": "receipt complete: kind=artifact lanes=3 author=claude-opus-5-5/claude"
+  }
+}
