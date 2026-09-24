@@ -27122,6 +27122,26 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
   labels:
   - kind:code
   notes: 'Epic #2124 (v0.1.619).'
+- id: PMAT-2141
+  github_issue: 2141
+  item_type: refactor
+  title: crates/xpile/src/main.rs cannot be committed through the pre-commit complexity gate (six functions over cognitive 25)
+  status: inprogress
+  priority: high
+  assigned_to: null
+  created: 2026-09-24T02:30:00Z
+  updated: 2026-09-24T02:30:00Z
+  spec: null
+  acceptance_criteria:
+  - pmat analyze complexity --file crates/xpile/src/main.rs --max-cyclomatic 30 --max-cognitive 25 is clean
+  - CLI behaviour unchanged, measured by a before/after output diff
+  - 'the parked #2140 rustdoc correction lands after this'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'Epic #2124 (v0.1.619).'
 - id: PMAT-2131
   github_issue: 2131
   item_type: task
