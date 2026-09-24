@@ -26,12 +26,21 @@
 //! a property of the SHIPPED `binop_is_int_arith`. Removing `BinOp::Shl` from
 //! the governed set turns it FAILED in 27 ms; restoring it returns SUCCESSFUL.
 //!
-//! **That is one proof out of over a hundred.** The rest still verify models,
-//! and this gate exists so that fact stays written down: `most_proofs_are_still
-//! _models_and_the_docs_must_say_so` fails the moment a document rounds the
-//! claim up. The honest sentence is *"the contracts are machine-checked as
-//! models; one property is machine-checked against the emitter"*, and it stops
-//! being honest the day someone drops the qualifier.
+//! **That was one proof out of over a hundred.** PMAT-2151 (epic #2125) added
+//! four more files, each proving a scalar predicate the emitter really calls:
+//! `c_int_lit_fits` and `c_binop_is_modular` (`xpile-rust-codegen`, the C-lane
+//! literal conversion of PMAT-1399), and `align8` and `is_commutative_monoid_op`
+//! (`xpile-wasm-codegen`, the literal layout and the fold-reordering
+//! decision). Each was run RED against a planted mutant of its shipped fn
+//! before this file counted it, and its header records the mutant.
+//!
+//! The rest still verify models, and this gate keeps that fact written down:
+//! `no_document_claims_the_whole_emitter_is_machine_checked` fails the moment a
+//! document rounds the claim up. The honest sentence is *"the contracts are
+//! machine-checked as models; a handful of scalar predicates are
+//! machine-checked against the emitter"*, and it stops being honest the day
+//! someone drops the qualifier. `the_bound_harness_count_does_not_fall` keeps
+//! the handful from shrinking back.
 //!
 //! ## Why the seam is scalar
 //!
@@ -200,7 +209,7 @@ fn the_harness_corpus_is_not_empty() {
 /// PROPERTY 5 — THE HONESTY CLAUSE, and the reason this file is a gate rather
 /// than a comment.
 ///
-/// One proof out of more than a hundred is wired to the emitter. Any document
+/// A handful of the more than a hundred proofs are wired to the emitter. Any document
 /// that describes the proof lane must not state or imply that xpile's own code
 /// is machine-checked without saying which part. This is quantified over the
 /// documents that make the claim, and it reds when a qualifier is dropped.
@@ -245,6 +254,58 @@ fn no_document_claims_the_whole_emitter_is_machine_checked() {
                     line.trim()
                 ));
             }
+        }
+    }
+    assert!(offences.is_empty(), "{}", offences.join("\n"));
+}
+
+/// The floor for [`the_bound_harness_count_does_not_fall`]: the number of
+/// harness FILES bound to shipped code when PMAT-2151 raised it from 1.
+const BOUND_HARNESS_FLOOR: usize = 5;
+
+/// PROPERTY 6 — the bound count only moves up (PMAT-2151).
+///
+/// The count is derived from the tree on every run, never typed. Deleting a
+/// bound harness, or dropping its `kani-deps:` line so it quietly reverts to
+/// verifying a model, reds here.
+#[test]
+fn the_bound_harness_count_does_not_fall() {
+    let real = load_bearing();
+    assert!(
+        real.len() >= BOUND_HARNESS_FLOOR,
+        "only {} Kani harness file(s) are bound to shipped code ({real:?}); the floor is \
+         {BOUND_HARNESS_FLOOR}. A bound harness was deleted or lost its `kani-deps:` line \
+         and went back to verifying a model. Restore it, or lower the floor in a commit \
+         that says why.",
+        real.len()
+    );
+}
+
+/// PROPERTY 7 — a bound harness records the mutant that turned it red.
+///
+/// A harness that calls shipped code can still be vacuous: a spec that copies
+/// the implementation agrees with it by construction. The evidence that it is
+/// not is a run against a wrong version of the shipped fn. This reds on a bound
+/// harness whose header does not name that run, so the claim is at least
+/// written where a reviewer can re-run it. (The CI `kani` job re-verifies the
+/// green half; the red half is recorded, not re-executed.)
+#[test]
+fn every_bound_harness_records_its_executed_falsification() {
+    let mut offences = Vec::new();
+    for (name, src) in harness_sources() {
+        if declared_deps(&src).is_empty() {
+            continue;
+        }
+        let header: String = src
+            .lines()
+            .take_while(|l| l.starts_with("//!") || l.trim().is_empty())
+            .collect::<Vec<_>>()
+            .join("\n");
+        if !(header.contains("Falsification, executed") && header.contains("FAILED")) {
+            offences.push(format!(
+                "  {name} is bound to shipped code but its header has no \
+                 `## Falsification, executed` section naming the mutant that turned it FAILED"
+            ));
         }
     }
     assert!(offences.is_empty(), "{}", offences.join("\n"));

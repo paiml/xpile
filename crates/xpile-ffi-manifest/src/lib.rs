@@ -1670,6 +1670,16 @@ pub fn resolve_boundary_to_langs(modules: &mut [Module]) {
     }
 }
 
+/// Seams for the Kani harnesses under `contracts/kani/` (PMAT-2151): the
+/// private scalar mappings they prove, re-exported unchanged. Not API.
+#[doc(hidden)]
+pub mod proof_seams {
+    /// The C ABI slot an FFI boundary type rides; see [`super::c_abi_type`].
+    pub fn c_abi_type(ty: &xpile_meta_hir::Type) -> Option<&'static str> {
+        super::c_abi_type(ty)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
