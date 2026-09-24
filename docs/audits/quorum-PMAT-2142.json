@@ -1,0 +1,181 @@
+{
+  "ticket": "PMAT-2142",
+  "base": "origin/main",
+  "base_resolved": "origin/main",
+  "base_note": "no origin/origin/main exists; judged against the local ref",
+  "head": "28a8bfd4b418422e4b96db9cd1bed673440745d7",
+  "diff_sha256": "7944ed1fcfd3fffb24f670e0d664dc91bc402e710b489ee17f53e0088bd156b3",
+  "width": 3,
+  "executor": "agy",
+  "prompt_mode": "inline",
+  "prompt_bytes": 4783,
+  "author": {
+    "model": "claude-opus-5-5",
+    "family": "claude",
+    "source": "flag"
+  },
+  "agreed": true,
+  "lanes": [
+    {
+      "lane": 1,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The provided diff meets all acceptance criteria. It replaces the old tokenizer that incorrectly split on hyphens with `pmat_ids()`, which uses `match_indices` to perfectly replicate the `grep -oE 'PMAT-[0-9]+'` semantics required by the ticket. The `pmat_ids_counts_hyphen_joined_citations_like_the_sibling_gates` test is a constructed-message test that includes a committed red arm demonstrating the failure of the old tokenizer on hyphen-joined IDs (e.g. `quorum-PMAT-2119.json`). No other unrelated logic was altered.",
+      "findings": [],
+      "raw_bytes": 3086,
+      "err_bytes": 62,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.1-pro-high",
+      "model_measured": "gemini-3.1-pro-high",
+      "model_source": "measured",
+      "family": "gemini",
+      "role": "independent",
+      "fallback": {
+        "judged_by": "gemini-3.1-pro-high",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gemini-3.1-pro-high",
+            "family": "gemini",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    },
+    {
+      "lane": 2,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff satisfies all acceptance criteria of PMAT-2142 without scope creep or gate weakening. ids_in_tag() now delegates to pmat_ids(), implementing the same grep -oE 'PMAT-[0-9]+' semantics as changelog_freshness and release_story_derivation_witness (#2136). The added unit test (pmat_ids_counts_hyphen_joined_citations_like_the_sibling_gates) verifies hyphen-joined citations against a constructed message and includes a committed red arm proving the previous whole-token split misses hyphen-joined citations on the exact same message. All 5 tests in changelog_release_membership_witness pass, sibling witness gates pass, and cargo fmt is clean.",
+      "findings": [],
+      "raw_bytes": 2871,
+      "err_bytes": 62,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.8-flash-high",
+      "model_measured": "gemini-3.8-flash-high",
+      "model_source": "measured",
+      "family": "gemini",
+      "role": "independent",
+      "fallback": {
+        "judged_by": "gemini-3.8-flash-high",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gemini-3.8-flash-high",
+            "family": "gemini",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    },
+    {
+      "lane": 3,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "PMAT-2142 is verified and PASSES review.\n\n1. **Acceptance Criteria Verification**:\n   - Criterion 1: `ids_in_tag` now delegates to `pmat_ids(&log)`, which uses `text.match_indices(\"PMAT-\")` and `take_while(char::is_ascii_digit)` to extract all PMAT citations under `grep -oE 'PMAT-[0-9]+'` semantics, matching sibling gates `changelog_freshness.rs` and `release_story_derivation_witness.rs` (#2136).\n   - Criterion 2: Added `pmat_ids_counts_hyphen_joined_citations_like_the_sibling_gates` with a constructed message (`\"docs(audit): quorum-PMAT-2119.json\\nRefs PMAT-1516)\\nPMAT-2120-done PMAT- PMAT-x\"`), asserting positive extraction of `[\"PMAT-1516\", \"PMAT-2119\", \"PMAT-2120\"]` alongside a committed red arm verifying that the prior whole-token split misses `PMAT-2119` and `PMAT-2120`.\n\n2. **Scope & Gate Integrity**:\n   - The diff is strictly bounded to `crates/xpile/tests/changelog_release_membership_witness.rs` and `docs/roadmaps/roadmap.yaml`.\n   - No gates are weakened, no tests assert opposite behavior, and roadmap registration accurately reflects the bug fix.",
+      "findings": [],
+      "raw_bytes": 3534,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.7-flash-high",
+      "model_measured": "gemini-3.7-flash-high",
+      "model_source": "measured",
+      "family": "gemini",
+      "role": "independent",
+      "fallback": {
+        "judged_by": "gemini-3.7-flash-high",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gemini-3.7-flash-high",
+            "family": "gemini",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    }
+  ],
+  "dissent": [],
+  "dedup": [],
+  "uncovered": [],
+  "coverage_source": "lanes",
+  "partial": true,
+  "partial_reasons": [
+    "lane 1: non-empty .err (62 bytes, 1 line(s) beyond agy-lane's workspace narration)",
+    "lane 2: non-empty .err (62 bytes, 1 line(s) beyond agy-lane's workspace narration)"
+  ],
+  "fallback": {
+    "same_family_width": 1,
+    "chain": [
+      {
+        "model": "gemini-3.1-pro-high",
+        "family": "gemini",
+        "disposition": "configured"
+      },
+      {
+        "model": "gemini-3.8-flash-high",
+        "family": "gemini",
+        "disposition": "configured"
+      },
+      {
+        "model": "gemini-3.7-flash-high",
+        "family": "gemini",
+        "disposition": "configured"
+      },
+      {
+        "model": "gpt-oss-120b-medium",
+        "family": "openai",
+        "disposition": "fallback"
+      },
+      {
+        "model": "qwen3.5",
+        "family": "qwen",
+        "disposition": "not-run",
+        "why": "no quorum.local_lane in the config — the aprender lane has no model to load"
+      },
+      {
+        "model": "claude-opus-4-6-thinking",
+        "family": "claude",
+        "disposition": "width",
+        "why": "same family as the author: at most 1 lane, recorded role width, counted toward no floor (R-15a)"
+      },
+      {
+        "model": "claude-sonnet-4-6",
+        "family": "claude",
+        "disposition": "width",
+        "why": "same family as the author: at most 1 lane, recorded role width, counted toward no floor (R-15a)"
+      }
+    ],
+    "precheck": [
+      {
+        "family": "gemini",
+        "model": "gemini-3.1-pro-high",
+        "probe": 1,
+        "outcome": "live"
+      }
+    ],
+    "prah": {
+      "source": "install-receipt",
+      "path": "/home/noah/.claude/skills/paiml-implement/bin/prah"
+    }
+  },
+  "auto_merge": {
+    "checked": true,
+    "was_armed": false,
+    "disarmed": false,
+    "note": "auto-merge not armed"
+  },
+  "lint": {
+    "ok": true,
+    "output": "receipt complete: kind=artifact lanes=3 author=claude-opus-5-5/claude"
+  }
+}

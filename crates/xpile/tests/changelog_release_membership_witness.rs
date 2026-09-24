@@ -118,14 +118,49 @@ fn arc_ids(section_body: &str) -> Vec<String> {
 /// Every PMAT id reachable from a tag's commit.
 fn ids_in_tag(tag: &str) -> Option<BTreeSet<String>> {
     let log = git(&["log", "--format=%s%n%b", &format!("{tag}^{{commit}}")])?;
-    Some(
-        log.split(|c: char| !c.is_ascii_alphanumeric() && c != '-')
-            .filter(|t| {
-                t.starts_with("PMAT-") && t.len() > 5 && t[5..].bytes().all(|b| b.is_ascii_digit())
-            })
-            .map(str::to_string)
-            .collect(),
-    )
+    Some(pmat_ids(&log))
+}
+
+/// Ids in `text` with `grep -oE 'PMAT-[0-9]+'` semantics: `PMAT-` then the
+/// longest run of digits, wherever it occurs.
+///
+/// xpile#2142: this used to split on characters other than alphanumerics and
+/// `-`, so an id cited only inside a hyphen-joined token
+/// (`quorum-PMAT-2119.json`) was not "in" its tag. That shrank the reachable
+/// set and could accuse a correct released section of claiming an arc its tag
+/// does not contain. `changelog_freshness.rs` and
+/// `release_story_derivation_witness.rs` (#2136) already count this way.
+fn pmat_ids(text: &str) -> BTreeSet<String> {
+    text.match_indices("PMAT-")
+        .filter_map(|(at, _)| {
+            let digits: String = text[at + 5..]
+                .chars()
+                .take_while(char::is_ascii_digit)
+                .collect();
+            (!digits.is_empty()).then(|| format!("PMAT-{digits}"))
+        })
+        .collect()
+}
+
+#[test]
+fn pmat_ids_counts_hyphen_joined_citations_like_the_sibling_gates() {
+    // `quorum-PMAT-2119.json` and `Refs PMAT-1516)` are real spellings from
+    // this repo's history; the rest are synthetic edge cases of the same kind.
+    let msg = "docs(audit): quorum-PMAT-2119.json\nRefs PMAT-1516)\nPMAT-2120-done PMAT- PMAT-x";
+    let got: Vec<String> = pmat_ids(msg).into_iter().collect();
+    assert_eq!(got, ["PMAT-1516", "PMAT-2119", "PMAT-2120"]);
+    // RED ARM, committed: the whole-token split this replaced misses the two
+    // hyphen-joined ids on the same text, so this message separates them.
+    let strict: BTreeSet<&str> = msg
+        .split(|c: char| !c.is_ascii_alphanumeric() && c != '-')
+        .filter(|t| {
+            t.starts_with("PMAT-") && t.len() > 5 && t[5..].bytes().all(|b| b.is_ascii_digit())
+        })
+        .collect();
+    assert!(
+        !strict.contains("PMAT-2119") && !strict.contains("PMAT-2120"),
+        "the message no longer separates the two tokenizers: {strict:?}"
+    );
 }
 
 fn tag_exists(tag: &str) -> bool {
