@@ -1,0 +1,65 @@
+{
+ "ticket": "PMAT-2138",
+ "pr": 2140,
+ "base": "main",
+ "head": "2e4f36d27bd94976a3b4b627d2d21d47281366df",
+ "agreed": true,
+ "degraded": "same-family",
+ "degraded_basis": "agy 429 on every family (a pre-checked round at e61edc30 went NO-VERDICT x3, kept outside the repo); Claude Code lanes per the operator's fallback rule. Lane 3 is claude-haiku-4-5, per the operator's 2026-09-24 rule relayed verbatim by the cop (one lane always a cheap Claude lane).",
+ "author": {
+  "session": "xpile-74",
+  "model": "claude-opus-5-5",
+  "family": "claude"
+ },
+ "executor": "claude-sequential",
+ "lanes": [
+  {
+   "lane": 1,
+   "model": "claude-sonnet-5",
+   "agent": "ab3d9f968645406f1",
+   "attempts": [
+    {
+     "judged": "132fead9-era",
+     "verdict": "FAIL",
+     "findings": [
+      "stale main.rs rustdoc contradicts hybrid_repair.rs (measured)",
+      "uint_adapter has no toolchain-free unit test (measured)"
+     ],
+     "applied": "a138a653 unit tests; main.rs doc in e61edc30 after #2143"
+    },
+    {
+     "judged": "e61edc30",
+     "verdict": "PASS"
+    }
+   ]
+  },
+  {
+   "lane": 2,
+   "model": "claude-sonnet-5",
+   "agent": "adaa80c0bd54a48f2",
+   "attempts": [
+    {
+     "judged": "e61edc30",
+     "verdict": "FAIL",
+     "findings": [
+      "'no wired repair rule has a reachable production symptom' is false: bump(True) -> E0308, --verify reports it, --repair fires ffi-arg-cast (measured)"
+     ],
+     "applied": "2e4f36d2: CUInt param impl Into<i64>; bool pinned in hybrid_unsigned; #2145 filed; hybrid_bool_arg is the convergence witness; the claim withdrawn everywhere"
+    },
+    {
+     "judged": "2e4f36d27bd94976a3b4b627d2d21d47281366df",
+     "verdict": "PASS",
+     "note": "remaining hole: a bool into a non-CUInt slot of a mixed signature, which is the disclosed scope (#2145)"
+    }
+   ]
+  },
+  {
+   "lane": 3,
+   "model": "claude-haiku-4-5",
+   "agent": "a54ee2a82dcb5f635",
+   "judged": "2e4f36d27bd94976a3b4b627d2d21d47281366df",
+   "verdict": "PASS",
+   "findings": []
+  }
+ ]
+}
