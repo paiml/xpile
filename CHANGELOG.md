@@ -13,6 +13,43 @@ not open a replacement, leaving no correct heading to write under; `v0.1.618` do
 contain them. Re-filed and gated by
 `crates/xpile/tests/changelog_release_membership_witness.rs` (PMAT-1496).
 
+### 8 of 35 contracts have no property-specific Runtime witness, and a gate now derives that count (PMAT-2159)
+
+PMAT-468 asked which contracts reach quorum on a byte-identity demo fixture
+alone. Its "10" was later re-scoped to "4", but the 4 came from a different
+metric: contracts with no `falsification_tests` key, which #1875 fixed. The
+question itself was never answered, and `audit-design.md` still said "8 of 13".
+
+`crates/xpile/tests/runtime_property_ledger_witness.rs` answers it with one
+row per contract, which it checks against the ids declared in `contracts/*.yaml`.
+The rows fall into three groups:
+
+- 23 contracts have a `#[test]` that runs emitted output. The gate checks that
+  the test calls its execution probe on a code line, not in a comment and not
+  as a substring of another name. It also checks that the probe's home file
+  spawns a process or a wgpu instance.
+- 4 trait contracts have a test that calls the trait API they govern.
+- 8 contracts have no such witness, and each row says why:
+  - `C-BASHRS-POSIX-IDEMPOTENCE`: no test runs an emitted script twice.
+  - `C-COMPILE-RUST-TO-PTX-MMA`: the only GPU kernel run is saxpy, not mma.
+  - `C-COMPILE-SHELL-TO-FORJAR`: `forjar validate` runs, nothing is applied.
+  - `C-FFI-CPYTHON-EXT`: the boundary is ctypes, not an extension module.
+  - `C-NOTATION-LATEX-MATH-TO-EQUATION` and `C-OLS-MODEL-UNIQUENESS` are
+    checked only in-process.
+  - `C-XLATE-LEAN-TO-RUST` and `C-XLATE-RUST-FN-TO-LEAN-THM` have no pipeline
+    to run.
+
+`audit-design.md` must print the derived sentence "8 of 35 contracts …". Four
+mutants each turned the gate red:
+
+- dropping a ledger row
+- naming a probe the tests do not call
+- editing the doc's count
+- removing the `assert_rustc_runs` call from `module_const`
+
+A row means some property of the contract is executed, not all of it. For
+example, `C-C-FLOAT-ARITH`'s witness has only two float cases.
+
 ### A Lean model is checked against xpile's shipped Rust for the first time (PMAT-2157)
 
 `contracts/lean/PyIntArith.lean` models Python `//`, `%` and `>>` on i64 as
