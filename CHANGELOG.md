@@ -13,6 +13,28 @@ not open a replacement, leaving no correct heading to write under; `v0.1.618` do
 contain them. Re-filed and gated by
 `crates/xpile/tests/changelog_release_membership_witness.rs` (PMAT-1496).
 
+### The FFI ABI-slot proof covers all 20 meta-HIR types, not 13 (PMAT-2154)
+
+`contracts/kani/real_ffi_abi_slot.rs` claimed to enumerate "all 13" variants of
+`xpile_meta_hir::Type`. The enum has 20. The seven payload-carrying ones
+(`Dict`, `List`, `Set`, `Tuple`, `Optional`, `Struct`, `Ptr`) were never checked.
+They fall to `c_abi_type`'s `_ => None` arm, so a wrong ABI arm for one of them
+still passed. The issue counted 19 and missed `Ptr`.
+
+A second harness, `payload_variants_have_no_abi_slot`, builds each of the seven
+with concrete inner types and asserts it has no ABI slot. It lives apart from the
+13-variant loop because heap-built payloads time CBMC out inside the loop. Each
+value is `mem::forget`-ed, because `Type`'s drop glue recurses through
+`Box<Type>` and CBMC cannot bound it. `index_of` is an exhaustive `match` with no
+wildcard, so a 21st variant stops the harness compiling until it is listed. Both
+proofs assert that every index maps back to itself.
+
+Executed: both harnesses are SUCCESSFUL on the shipped table (0.9 s and 2.2 s).
+Adding `Type::Struct(_) => Some("::std::os::raw::c_int")` to the shipped
+`c_abi_type` turns `payload_variants_have_no_abi_slot` FAILED on "a payload
+variant got an ABI slot". The Kani tally in the specs moves from 103 to 104
+harnesses (593 stratum-vote artifacts), as `claims_drift` requires.
+
 ### Six Kani harness files now verify xpile's shipped code, up from one, and the count cannot fall (PMAT-2151)
 
 PMAT-1512 found that every Kani proof verified a hand-written model, then bound

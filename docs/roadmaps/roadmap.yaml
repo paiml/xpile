@@ -27279,3 +27279,22 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
   labels:
   - kind:code
   notes: 'Epic #2124 (v0.1.619). Follow-up to PMAT-2145 (PR #2147), from its round-3 quorum sonnet lane. Test-only: extends hybrid_long and hybrid_float32.'
+- id: PMAT-2154
+  github_issue: 2154
+  item_type: task
+  title: "proofs: real_ffi_abi_slot checks all 20 meta-HIR Type variants"
+  status: inprogress
+  priority: medium
+  assigned_to: null
+  created: 2026-09-25T00:00:00Z
+  updated: 2026-09-25T00:00:00Z
+  spec: null
+  acceptance_criteria:
+  - the harness checks every xpile_meta_hir::Type variant (payload-carrying ones built with concrete inner types) and asserts None for every non-C-scalar
+  - still SUCCESSFUL on the shipped table, and a mutant adding a Type::Struct ABI arm goes FAILED
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'Epic #2125 (v0.1.620). Follow-up to PMAT-2151 (PR #2152), from its quorum lane 3. The issue counted 19 variants; the enum has 20 (Ptr). Payload variants live in a second harness with mem::forget, because recursive Type drop glue timed CBMC out.'

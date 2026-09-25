@@ -23,7 +23,11 @@
 //! Mapping `Type::CUInt` to `c_int` in the shipped `c_abi_type` turns
 //! `abi_slot_matches_the_c_type_and_the_wrapper` FAILED; so does mapping
 //! `Type::CULong` to `c_uint`. Restoring the table returns SUCCESSFUL
-//! (recorded in the PR for PMAT-2151).
+//! (recorded in the PR for PMAT-2151). PMAT-2154: adding a
+//! `Type::Struct(_) => Some("::std::os::raw::c_int")` arm turns
+//! `payload_variants_have_no_abi_slot` FAILED ("a payload variant got an ABI
+//! slot"). Before PMAT-2154 the seven payload-carrying variants were never
+//! checked, so that arm passed.
 
 use std::mem::size_of;
 use std::os::raw::{c_char, c_double, c_float, c_int, c_longlong, c_uint, c_ulonglong};
@@ -103,7 +107,8 @@ fn intended_c(i: u8) -> (Type, Option<(usize, Kind)>) {
 /// wrapper's native type holds that slot's values without loss: same kind,
 /// same width for floats and unsigned ints, at least as wide for signed ints.
 ///
-/// The variants are enumerated concretely (all 13), not drawn with
+/// The 13 payload-free variants are enumerated concretely (the seven
+/// payload-carrying ones are `payload_variants_have_no_abi_slot`), not drawn with
 /// `kani::any()`: a symbolic index makes every `&str` comparison in the two
 /// shape tables a `memcmp` of unknown length, which CBMC cannot bound.
 #[kani::proof]
@@ -114,8 +119,38 @@ fn abi_slot_matches_the_c_type_and_the_wrapper() {
     }
 }
 
+/// The index each variant is checked under: 0..=12 in `intended_c`, 13..=19 in
+/// `payload_variants_have_no_abi_slot`. Exhaustive with no wildcard, so a new
+/// `Type` variant stops this harness compiling until it is listed, and both
+/// proofs assert every index maps back to itself.
+fn index_of(ty: &Type) -> u8 {
+    match ty {
+        Type::I64 => 0,
+        Type::Bool => 1,
+        Type::CLong => 2,
+        Type::CUInt => 3,
+        Type::CULong => 4,
+        Type::F32 => 5,
+        Type::F64 => 6,
+        Type::CChar => 7,
+        Type::Str => 8,
+        Type::BigInt => 9,
+        Type::Unit => 10,
+        Type::ShellString => 11,
+        Type::ExitCode => 12,
+        Type::Dict(..) => 13,
+        Type::List(_) => 14,
+        Type::Set(_) => 15,
+        Type::Tuple(_) => 16,
+        Type::Optional(_) => 17,
+        Type::Struct(_) => 18,
+        Type::Ptr { .. } => 19,
+    }
+}
+
 fn check_variant(i: u8) {
     let (ty, intended) = intended_c(i);
+    assert!(index_of(&ty) == i, "intended_c skips or repeats a variant");
     let slot = c_abi_type(&ty);
     match intended {
         None => assert!(slot.is_none(), "a non-C-scalar got an ABI slot"),
@@ -132,4 +167,45 @@ fn check_variant(i: u8) {
             }
         }
     }
+}
+
+/// PMAT-2154: the seven payload-carrying variants, built with concrete inner
+/// types, have no ABI slot. None of them is a C scalar. `Ptr` is `None` here
+/// too: its `*mut`/`*const` slot is rendered by `c_abi_render`, not by this
+/// table. A separate harness because heap-built payloads time CBMC out inside
+/// the loop above.
+#[kani::proof]
+#[kani::unwind(9)]
+fn payload_variants_have_no_abi_slot() {
+    let payloads = [
+        (13, Type::Dict(Box::new(Type::Str), Box::new(Type::I64))),
+        (14, Type::List(Box::new(Type::I64))),
+        (15, Type::Set(Box::new(Type::I64))),
+        (16, Type::Tuple(vec![Type::I64, Type::F64])),
+        (17, Type::Optional(Box::new(Type::I64))),
+        (18, Type::Struct(String::from("S"))),
+        (
+            19,
+            Type::Ptr {
+                mutable: false,
+                pointee: Box::new(Type::CChar),
+            },
+        ),
+    ];
+    let mut seen = 0u32;
+    for (i, ty) in payloads.iter() {
+        assert!(
+            index_of(ty) == *i,
+            "a payload variant is missing or repeated"
+        );
+        assert!(
+            c_abi_type(ty).is_none(),
+            "a payload variant got an ABI slot"
+        );
+        seen |= 1 << (i - 13);
+    }
+    assert!(seen == 0b111_1111, "not every payload variant was checked");
+    // `Type`'s drop glue recurses through `Box<Type>`; CBMC cannot bound it
+    // and times out. Leaking seven values in a proof is harmless.
+    std::mem::forget(payloads);
 }
