@@ -136,7 +136,10 @@ enum Cmd {
     },
     /// Unified §14.4 N-of-M oracle quorum reporter (PMAT-033). Walks
     /// every contract and tallies per-stratum votes:
-    ///   Semantic   = `lean_theorem:` refs in the contract's own YAML
+    ///   Semantic   = `lean_theorem:` refs in the contract's own YAML; for a
+    ///                contract whose metadata says `quorum_semantic:
+    ///                shipped-bound` (the pilot, PMAT-2163), only the
+    ///                `shipped_binding:` refs
     ///   Symbolic   = `kani_harness:` refs in the contract's own YAML
     ///   Runtime    = the UNION of (a) fixture files under tests/fixtures/
     ///                that name the contract ID and (b) top-level `*.rs`
@@ -3167,6 +3170,8 @@ roadmap:
 #[derive(Debug, Clone)]
 struct QuorumRow {
     id: String,
+    /// PMAT-2163: Semantic counts only theorems bound to shipped code.
+    shipped_bound: bool,
     semantic: usize,
     symbolic: usize,
     runtime: usize,
@@ -3273,8 +3278,17 @@ fn quorum(
         let Some(id) = extract_metadata_id(contents) else {
             continue;
         };
+        let shipped_bound = is_shipped_bound_pilot(contents);
         rows.push(QuorumRow {
-            semantic: count_field_occurrences(contents, "lean_theorem:"),
+            semantic: count_field_occurrences(
+                contents,
+                if shipped_bound {
+                    "shipped_binding:"
+                } else {
+                    "lean_theorem:"
+                },
+            ),
+            shipped_bound,
             symbolic: count_field_occurrences(contents, "kani_harness:"),
             runtime: count_runtime_witnesses(&id, fixtures_dir, &loaded_fixtures, witness_dirs),
             extrinsic: 0, // filled below
@@ -3318,6 +3332,29 @@ fn quorum(
         print_quorum_text(&rows);
     }
     Ok(())
+}
+
+/// PMAT-2163 (epic #2125, quorum honesty pilot): a contract opts in with
+/// `quorum_semantic: shipped-bound` in its `metadata:` block. Its Semantic
+/// stratum then counts only proof obligations that carry a
+/// `shipped_binding:` — a Lean theorem about a model function whose values a
+/// test checks against xpile's shipped output. A theorem about a
+/// re-implementation alone stops counting. Every other contract keeps the
+/// old rule (every `lean_theorem:` ref), and the report says so.
+/// `crates/xpile/tests/quorum_semantic_pilot_witness.rs` derives the bound
+/// set from the Lean pins and holds each `shipped_binding:` to it.
+fn is_shipped_bound_pilot(contents: &str) -> bool {
+    let mut lines = contents.lines().skip_while(|l| !l.starts_with("metadata:"));
+    if lines.next().is_none() {
+        return false;
+    }
+    lines
+        .take_while(|l| l.is_empty() || l.starts_with(' ') || l.starts_with('#'))
+        .any(|l| {
+            l.trim_start()
+                .strip_prefix("quorum_semantic:")
+                .is_some_and(|v| v.trim().trim_matches('"') == "shipped-bound")
+        })
 }
 
 /// Count occurrences of `field_prefix` (e.g. `"lean_theorem:"`) as a
@@ -3600,6 +3637,22 @@ fn print_quorum_text(rows: &[QuorumRow]) {
     println!(
         "rule (ruchy 5.0 §14.4): QUORUM = ≥1 vote in ≥3 strata; PARTIAL = ≥1 vote in 1-2 strata."
     );
+    let pilot: Vec<&str> = rows
+        .iter()
+        .filter(|r| r.shipped_bound)
+        .map(|r| r.id.as_str())
+        .collect();
+    println!(
+        "Semantic, pilot (PMAT-2163): {} count only Lean theorems bound to shipped code \
+         (`shipped_binding:`); the other {} contracts count every `lean_theorem:` ref, \
+         including theorems about a re-implementation.",
+        if pilot.is_empty() {
+            "no contracts".to_string()
+        } else {
+            pilot.join(", ")
+        },
+        rows.len() - pilot.len()
+    );
 }
 
 fn print_quorum_json(rows: &[QuorumRow]) {
@@ -3612,7 +3665,7 @@ fn print_quorum_json(rows: &[QuorumRow]) {
         first = false;
         print!(
             "{{\"id\":\"{}\",\"semantic\":{},\"symbolic\":{},\"runtime\":{},\"extrinsic\":{},\
-             \"strata_represented\":{},\"status\":\"{}\"}}",
+             \"strata_represented\":{},\"status\":\"{}\",\"semantic_rule\":\"{}\"}}",
             r.id,
             r.semantic,
             r.symbolic,
@@ -3620,6 +3673,11 @@ fn print_quorum_json(rows: &[QuorumRow]) {
             r.extrinsic,
             r.strata_represented(),
             r.status(),
+            if r.shipped_bound {
+                "shipped-bound"
+            } else {
+                "every-lean-theorem"
+            },
         );
     }
     println!("]}}");
@@ -3632,6 +3690,7 @@ mod quorum_tests {
     #[test]
     fn quorum_row_status_thresholds() {
         let r0 = QuorumRow {
+            shipped_bound: false,
             id: "X".into(),
             semantic: 0,
             symbolic: 0,
@@ -3640,6 +3699,7 @@ mod quorum_tests {
         };
         assert_eq!(r0.status(), "UNVERIFIED");
         let r1 = QuorumRow {
+            shipped_bound: false,
             id: "X".into(),
             semantic: 1,
             symbolic: 0,
@@ -3648,6 +3708,7 @@ mod quorum_tests {
         };
         assert_eq!(r1.status(), "PARTIAL");
         let r2 = QuorumRow {
+            shipped_bound: false,
             id: "X".into(),
             semantic: 1,
             symbolic: 1,
@@ -3656,6 +3717,7 @@ mod quorum_tests {
         };
         assert_eq!(r2.status(), "PARTIAL");
         let r3 = QuorumRow {
+            shipped_bound: false,
             id: "X".into(),
             semantic: 1,
             symbolic: 1,
@@ -3664,6 +3726,7 @@ mod quorum_tests {
         };
         assert_eq!(r3.status(), "QUORUM");
         let r4 = QuorumRow {
+            shipped_bound: false,
             id: "X".into(),
             semantic: 7,
             symbolic: 1,
@@ -3673,6 +3736,21 @@ mod quorum_tests {
         assert_eq!(r4.status(), "QUORUM");
         assert_eq!(r4.total(), 16);
         assert_eq!(r4.strata_represented(), 4);
+    }
+
+    #[test]
+    fn shipped_bound_pilot_is_read_from_the_metadata_block_only() {
+        let pilot = "metadata:\n  id: C-X\n  quorum_semantic: shipped-bound\nobligations:\n";
+        assert!(is_shipped_bound_pilot(pilot));
+        let quoted = "metadata:\n  id: C-X\n  quorum_semantic: \"shipped-bound\"\n";
+        assert!(is_shipped_bound_pilot(quoted));
+        // Outside `metadata:`, commented out, or another value: not a pilot.
+        let outside = "metadata:\n  id: C-X\nother:\n  quorum_semantic: shipped-bound\n";
+        assert!(!is_shipped_bound_pilot(outside));
+        let commented = "metadata:\n  id: C-X\n  # quorum_semantic: shipped-bound\n";
+        assert!(!is_shipped_bound_pilot(commented));
+        let other = "metadata:\n  id: C-X\n  quorum_semantic: every-lean-theorem\n";
+        assert!(!is_shipped_bound_pilot(other));
     }
 
     #[test]

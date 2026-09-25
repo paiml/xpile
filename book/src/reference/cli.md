@@ -160,7 +160,8 @@ xpile quorum [--contracts-dir <DIR>] [--json]
 
 For each contract, tallies votes across the four strata:
 
-- **Semantic** — `lean_theorem:` refs in the contract YAML
+- **Semantic** — `lean_theorem:` refs in the contract YAML. On the
+  pilot contracts (below), only the refs with a `shipped_binding:`
 - **Symbolic** — `kani_harness:` refs in the contract YAML
 - **Runtime** — the union of fixtures under `tests/fixtures/`
   mentioning the contract ID and top-level `*.rs` files under each
@@ -173,6 +174,30 @@ A contract is **QUORUM** when ≥1 vote arrives from ≥3 strata,
 live totals — read it there rather than from this page. Not every
 contract is at quorum; the PARTIAL count is routinely non-zero as new
 contracts land ahead of their Lean or Kani votes.
+
+### Semantic pilot: theorems bound to shipped code (PMAT-2163)
+
+Most `lean_theorem:` refs are about a Lean re-implementation of the
+construct, so no edit to xpile could turn one red. A contract whose
+`metadata:` says `quorum_semantic: shipped-bound` counts a Semantic vote
+only for an obligation with a `shipped_binding:`. That field names a test
+that runs xpile's shipped output against pins in the Lean file. A theorem
+is bound only if its statement names a model function those pins reach.
+`crates/xpile/tests/quorum_semantic_pilot_witness.rs` derives that set
+from the Lean source and holds the YAML to it.
+
+"Bound" means the theorem is about a function whose values are checked
+against the shipped binary on the pinned inputs. It does not mean the
+theorem itself was checked against the binary.
+
+Only these contracts use the rule. The other contracts still count every
+`lean_theorem:` ref, and the report's last line says so. This table is
+checked against the binary by the same test:
+
+| contract | Semantic (pilot rule) | Semantic (every `lean_theorem:`) |
+|---|---|---|
+| `C-PY-INT-ARITH` | 3 | 42 |
+| `C-BASHRS-POSIX-IDEMPOTENCE` | 1 | 18 |
 
 ## `xpile audit`
 
