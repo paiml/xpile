@@ -348,7 +348,12 @@ fn every_shipped_binding_is_derived_from_the_lean_pins() {
         assert!(n >= 1, "{path}");
     }
     // Outside the pilot, `shipped_binding:` has no effect, so it must not appear.
-    for (path, yaml) in contract_yamls().iter().filter(|(_, y)| !is_pilot(y)) {
+    let others: Vec<_> = contract_yamls()
+        .into_iter()
+        .filter(|(_, y)| !is_pilot(y))
+        .collect();
+    assert!(!others.is_empty(), "no contract outside the pilot was read");
+    for (path, yaml) in &others {
         assert_eq!(
             count(yaml, "shipped_binding:"),
             0,
