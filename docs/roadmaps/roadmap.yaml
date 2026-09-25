@@ -27261,3 +27261,21 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
   labels:
   - kind:code
   notes: 'Epic #2125 (v0.1.620), row 1 of the grilled plan. The seams are scalar predicates, following the recipe PMAT-1512 measured (recursive Expr walks do not finish under Kani). depyler-frontend was skipped because it pulls in rustpython-parser; its flip_cmp is a candidate for a later raise. Landed 6 bound files (floor 6): the original plus c_int_lit_fits, c_binop_is_modular, align8, commutative_monoid_op and ffi_abi_slot. Tried and not landed: diff_stdout (xpile-oracle) and ptx_version_for, both past the 180 s harness timeout on symbolic String (CI or gx10 candidates); ptx capability grammar was never run.'
+- id: PMAT-2150
+  github_issue: 2150
+  item_type: task
+  title: "hybrid: pin a bool argument into a C long long and float boundary with an executing fixture"
+  status: inprogress
+  priority: medium
+  assigned_to: null
+  created: 2026-09-25T00:00:00Z
+  updated: 2026-09-25T00:00:00Z
+  spec: null
+  acceptance_criteria:
+  - an executing fixture passes True into a long long slot and a float slot and MATCHes CPython byte-for-byte under xpile hybrid --verify, with the expected output measured from ctypes (the issue's done_when, verbatim scope)
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'Epic #2124 (v0.1.619). Follow-up to PMAT-2145 (PR #2147), from its round-3 quorum sonnet lane. Test-only: extends hybrid_long and hybrid_float32.'

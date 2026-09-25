@@ -8,6 +8,9 @@
 # which rounds and widens exactly as ctypes' `c_float` binding does. The lines
 # below pin where f32 rounding shows in the printed repr (1.1, 0.1), an exact
 # value (3.0), and a result used in f64 arithmetic.
+#
+# #2150: a `bool` argument into the `float` slot converts as ctypes does
+# (`c_float(True)` is 1.0), so `twice(True)` is 2.0 and `twice(False)` is 0.0.
 from ._core import twice
 
 
@@ -17,3 +20,5 @@ def main() -> None:
     print(twice(0.1))
     y = twice(2.5)
     print(y + 1.0)
+    print(twice(True))
+    print(twice(False))

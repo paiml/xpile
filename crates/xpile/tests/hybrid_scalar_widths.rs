@@ -62,10 +62,11 @@ fn float_boundary_matches_cpython_without_repair() {
         out.status.success(),
         "`--verify` on hybrid_float32 must exit 0;\nstdout:\n{stdout}\nstderr:\n{stderr}"
     );
-    // CPython through ctypes' c_float, measured: f32 rounding shows in the repr.
+    // CPython through ctypes' c_float, measured: f32 rounding shows in the repr,
+    // and a bool argument converts as ctypes does: `c_float(True)` is 1.0 (#2150).
     assert!(
         stdout.contains(
-            r#"✓ MATCH — stdout byte-identical (4 line(s)): "2.200000047683716\n6.0\n0.20000000298023224\n6.0""#
+            r#"✓ MATCH — stdout byte-identical (6 line(s)): "2.200000047683716\n6.0\n0.20000000298023224\n6.0\n2.0\n0.0""#
         ),
         "expected CPython's exact c_float output:\n{stdout}"
     );
@@ -124,8 +125,8 @@ fn long_long_boundary_is_compared_not_skipped() {
     assert!(
         out.status.success()
             && stdout.contains(
-                r#"✓ MATCH — stdout byte-identical (2 line(s)): "-21\n9223372036854775806""#
+                r#"✓ MATCH — stdout byte-identical (4 line(s)): "-21\n9223372036854775806\n3\n0""#
             ),
-        "expected a MATCH against CPython's c_longlong;\nstdout:\n{stdout}\nstderr:\n{stderr}"
+        "expected a MATCH against CPython's c_longlong, a bool argument included (#2150);\nstdout:\n{stdout}\nstderr:\n{stderr}"
     );
 }
