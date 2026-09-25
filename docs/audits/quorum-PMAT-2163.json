@@ -1,367 +1,103 @@
 {
   "ticket": "PMAT-2163",
+  "pr": 2164,
   "base": "main",
-  "base_resolved": "origin/main",
-  "base_note": "local main differs from origin/main by 6 commit(s); judged against origin/main",
-  "head": "bfd2eb39cccd60a8a252950f54ccd4b23946ca46",
-  "diff_sha256": "557df9efb3a441922a202230bdfe2cc10496878ac35833612602319109b3720d",
-  "width": 3,
-  "executor": "agy",
-  "prompt_mode": "inline",
-  "prompt_bytes": 42757,
+  "head": "bfe9be418528abfd2e1ba614dae558e8ba147307",
+  "diff_sha256": "42754bdc43042c254a94ecdc3a7b62a71c0e7f54950f8ccadfb3ed57232f1b17",
+  "brief_sha256": null,
+  "agreed": true,
+  "degraded": "same-family",
+  "degraded_basis": "agy 429 on every gemini lane and fallback step at this head (round 3 NO-VERDICT, kept outside the repo); Claude Code lanes sonnet + haiku + sonnet, run sequentially on the round's own brief, per the operator's fallback rule; author is Opus, no lane uses the author's model.",
   "author": {
     "model": "claude-opus-5-5",
-    "family": "claude",
-    "source": "flag"
+    "family": "claude"
   },
-  "agreed": true,
+  "executor": "claude-sequential",
   "lanes": [
     {
       "lane": 1,
-      "status": "SUCCESS",
+      "model": "claude-sonnet-5",
+      "family": "claude",
       "verdict": "PASS",
-      "summary": "The diff accurately implements the required features to selectively count bound theorems in pilot contracts, accurately introduces reporting/JSON metadata, and adds 100% compliant Red/Green witness testing and doc-sync gates. All ACs pass.",
+      "summary": "Diff implements all four PMAT-2163 acceptance criteria: pilot opt-in via metadata.quorum_semantic, shipped_binding-only Semantic counting for pilot contracts (verified counts 42->3, 18->1 via grep), a derivation-witness test with RED arms, and a doc-sync gate. No weakened gates, inverted tests, or out-of-scope changes found.",
       "findings": [
         {
-          "claim": "a contract with metadata quorum_semantic shipped-bound counts only obligations with a shipped_binding as Semantic votes",
           "file": "crates/xpile/src/main.rs",
-          "grounding": "cited",
-          "line": 3320
+          "line": 3342,
+          "claim": "is_shipped_bound_pilot scopes its scan to the metadata: block and correctly excludes commented-out or out-of-block quorum_semantic lines",
+          "grounding": "cited"
         },
         {
-          "claim": "the shipped_binding set is derived from the Lean pin block, both ways, and each binding names a test that reads the block",
-          "file": "crates/xpile/tests/quorum_semantic_pilot_witness.rs",
-          "grounding": "cited",
-          "line": 249
+          "file": "contracts/py-int-arith-v1.yaml",
+          "line": 4,
+          "claim": "lean_theorem: count is 42, shipped_binding: count is 3, matching CHANGELOG/cli.md table",
+          "grounding": "measured"
         },
         {
-          "claim": "a RED arm shows the old count (C-PY-INT-ARITH 42 -> 3); the report and JSON disclose the rule; other contracts are unchanged",
-          "file": "crates/xpile/tests/quorum_semantic_pilot_witness.rs",
-          "grounding": "cited",
-          "line": 401
+          "file": "contracts/bashrs-posix-idempotence-v1.yaml",
+          "line": 4,
+          "claim": "lean_theorem: count is 18, shipped_binding: count is 1, matching CHANGELOG/cli.md table",
+          "grounding": "measured"
         },
         {
-          "claim": "a doc-sync gate reds when a live doc quotes a quorum row, totals line or pilot-table row the binary no longer prints",
-          "file": "crates/xpile/tests/quorum_semantic_pilot_witness.rs",
-          "grounding": "cited",
-          "line": 641
+          "file": "crates/xpile/src/main.rs",
+          "line": 3637,
+          "claim": "the pilot disclosure line is printed last in print_quorum_text, after the totals and rule lines",
+          "grounding": "cited"
         }
-      ],
-      "raw_bytes": 6682,
-      "err_bytes": 0,
-      "envelope_status": "SUCCESS",
-      "verdict_source": "structured_output",
-      "model": "gemini-3.1-pro-high",
-      "model_measured": "gemini-3.1-pro-high",
-      "model_source": "measured",
-      "family": "gemini",
-      "role": "independent",
-      "fallback": {
-        "judged_by": "gemini-3.1-pro-high",
-        "exhausted": false,
-        "attempts": [
-          {
-            "model": "gemini-3.1-pro-high",
-            "family": "gemini",
-            "outcome": "answered"
-          }
-        ],
-        "skipped": []
-      }
+      ]
     },
     {
       "lane": 2,
-      "status": "SUCCESS",
+      "model": "claude-haiku-4-5",
+      "family": "claude",
       "verdict": "PASS",
-      "summary": "The diff strictly implements all acceptance criteria of PMAT-2163 without weakening existing gates or exceeding scope. Pilot contracts (C-PY-INT-ARITH and C-BASHRS-POSIX-IDEMPOTENCE) count only shipped_binding obligations for Semantic votes, while non-pilot contracts retain the existing rule. The witness suite enforces bidirectional derivation against Lean pin blocks, provides RED test arms verifying count restoration when markers are removed, and guards live docs against stale quorum citations.",
+      "summary": "Diff correctly implements PMAT-2163: pilot contracts C-PY-INT-ARITH and C-BASHRS-POSIX-IDEMPOTENCE opt in with quorum_semantic: shipped-bound marker, Semantic votes count only shipped_binding refs (3 and 1 respectively, down from 42 and 18), witness test derives and verifies binding sets against Lean pins bidirectionally, binary reports semantic_rule field and names pilot contracts, and doc-sync gate enforces live documentation against binary output. All four acceptance criteria met with comprehensive RED/GREEN test coverage. Receipt shows 3/3 lanes PASS.",
       "findings": [
         {
-          "claim": "In crates/xpile/src/main.rs, is_shipped_bound_pilot inspects metadata: for quorum_semantic: shipped-bound; when present, count_field_occurrences counts shipped_binding: instead of lean_theorem: for the Semantic stratum.",
           "file": "crates/xpile/src/main.rs",
-          "grounding": "cited",
-          "line": 3281
+          "line": 3281,
+          "claim": "is_shipped_bound_pilot() detects quorum_semantic: shipped-bound in metadata; quorum() counts shipped_binding: instead of lean_theorem: for pilot contracts",
+          "grounding": "cited"
         },
         {
-          "claim": "In crates/xpile/tests/quorum_semantic_pilot_witness.rs, check_pilot derives the bound theorem set from the Lean pin block's transitive closure over in-file defs, asserts bijection (derived == declared) against YAML shipped_binding annotations, and verifies that each test reads the pin block header.",
           "file": "crates/xpile/tests/quorum_semantic_pilot_witness.rs",
-          "grounding": "cited",
-          "line": 218
+          "line": 218,
+          "claim": "check_pilot() derives bound theorems from Lean pin block's transitive closure, asserts bijection with YAML shipped_binding set, verifies each binding names a test that reads the pin-block header",
+          "grounding": "cited"
         },
         {
-          "claim": "In crates/xpile/tests/quorum_semantic_pilot_witness.rs, red_stripping_the_marker_restores_the_old_reimplementation_count asserts that stripping the pilot marker restores the old reimplementation count (C-PY-INT-ARITH 42 -> 3) and only pilot contracts change; the CLI text and JSON report disclose the pilot rule.",
           "file": "crates/xpile/tests/quorum_semantic_pilot_witness.rs",
-          "grounding": "cited",
-          "line": 433
+          "line": 401,
+          "claim": "red_stripping_the_marker_restores_the_old_reimplementation_count() strips marker and confirms C-PY-INT-ARITH 42\u21923, only pilot rows change",
+          "grounding": "cited"
         },
         {
-          "claim": "In crates/xpile/tests/quorum_semantic_pilot_witness.rs, every_quorum_count_a_live_doc_quotes_is_what_the_binary_prints validates live markdown docs against binary output, and red_a_doc_quote_the_binary_no_longer_prints_is_refused proves stale quotes are rejected.",
+          "file": "crates/xpile/src/main.rs",
+          "line": 3637,
+          "claim": "text report discloses pilot with 'Semantic, pilot (PMAT-2163): [ids]'; JSON adds semantic_rule field ('shipped-bound' or 'every-lean-theorem')",
+          "grounding": "cited"
+        },
+        {
           "file": "crates/xpile/tests/quorum_semantic_pilot_witness.rs",
-          "grounding": "cited",
-          "line": 589
+          "line": 589,
+          "claim": "doc-sync gate every_quorum_count_a_live_doc_quotes_is_what_the_binary_prints() parses live .md for rows/totals/pilot-table, verifies against binary; red_a_doc_quote_the_binary_no_longer_prints_is_refused() rejects stale counts",
+          "grounding": "cited"
         }
-      ],
-      "raw_bytes": 5316,
-      "err_bytes": 0,
-      "envelope_status": "SUCCESS",
-      "verdict_source": "structured_output",
-      "grounding_check": "parity",
-      "model": "gemini-3.8-flash-high",
-      "model_measured": "gemini-3.8-flash-high",
-      "model_source": "measured",
-      "family": "gemini",
-      "role": "independent",
-      "fallback": {
-        "judged_by": "gemini-3.8-flash-high",
-        "exhausted": false,
-        "attempts": [
-          {
-            "model": "gemini-3.8-flash-high",
-            "family": "gemini",
-            "outcome": "answered"
-          }
-        ],
-        "skipped": []
-      }
+      ]
     },
     {
       "lane": 3,
-      "status": "SUCCESS",
+      "model": "claude-sonnet-5",
+      "family": "claude",
       "verdict": "PASS",
-      "summary": "The diff fully satisfies ticket PMAT-2163. It restricts Semantic quorum votes to obligations carrying a `shipped_binding:` for pilot contracts opting in via `quorum_semantic: shipped-bound` in `metadata:`. On the two pilot contracts, Semantic votes adjust from 42 to 3 (`C-PY-INT-ARITH`) and from 18 to 1 (`C-BASHRS-POSIX-IDEMPOTENCE`), leaving contract statuses at QUORUM and overall totals at 26 QUORUM / 9 PARTIAL across all 35 contracts. The witness suite `quorum_semantic_pilot_witness.rs` derives the bound set from Lean pin blocks in both directions, tests negative/rejection cases, and verifies doc synchronization. No gates were weakened, and no unrequested changes were introduced.",
-      "findings": [
-        {
-          "claim": "is_shipped_bound_pilot detects `quorum_semantic: shipped-bound` in contract metadata, causing xpile quorum to count `shipped_binding:` occurrences for pilot contracts and `lean_theorem:` for all other contracts, disclosing the rule in text and JSON output.",
-          "file": "crates/xpile/src/main.rs",
-          "grounding": "cited",
-          "line": 3281
-        },
-        {
-          "claim": "Pilot contracts C-PY-INT-ARITH and C-BASHRS-POSIX-IDEMPOTENCE opt in with quorum_semantic: shipped-bound; C-PY-INT-ARITH binds 3 obligations (floor div, mod, shr) to lean_shipped_pilot_witness.rs and C-BASHRS-POSIX-IDEMPOTENCE binds 1 obligation (composition_idempotence_diamond) to bashrs_idempotence_seam_witness.rs.",
-          "file": "contracts/py-int-arith-v1.yaml",
-          "grounding": "cited",
-          "line": 4
-        },
-        {
-          "claim": "quorum_semantic_pilot_witness.rs implements 7 comprehensive tests: deriving bound sets from Lean pin blocks both ways, refusing bindings on reimplementation theorems or tests that omit pin blocks, verifying binary tally and disclosure, demonstrating RED arm when pilot marker is stripped (42 -> 3), and enforcing doc sync against live markdown tables and quotes.",
-          "file": "crates/xpile/tests/quorum_semantic_pilot_witness.rs",
-          "grounding": "cited",
-          "line": 335
-        },
-        {
-          "claim": "Reference documentation in book/src/reference/cli.md documents the pilot rule and incorporates the binary-checked table showing Semantic counts before and after the pilot.",
-          "file": "book/src/reference/cli.md",
-          "grounding": "cited",
-          "line": 178
-        }
-      ],
-      "raw_bytes": 5632,
-      "err_bytes": 0,
-      "envelope_status": "SUCCESS",
-      "verdict_source": "structured_output",
-      "grounding_check": "parity",
-      "model": "gemini-3.7-flash-high",
-      "model_measured": "gemini-3.7-flash-high",
-      "model_source": "measured",
-      "family": "gemini",
-      "role": "independent",
-      "fallback": {
-        "judged_by": "gemini-3.7-flash-high",
-        "exhausted": false,
-        "attempts": [
-          {
-            "model": "gemini-3.7-flash-high",
-            "family": "gemini",
-            "outcome": "answered"
-          }
-        ],
-        "skipped": []
-      }
+      "summary": "Implements PMAT-2163 as specified: quorum_semantic: shipped-bound opt-in on exactly the two pilot contracts, Semantic stratum counts shipped_binding: only for those, all other 33 contracts unaffected. Verified by hand: lean_theorem counts (42, 18) and shipped_binding counts (3, 1) match the CHANGELOG/cli.md tables exactly; the Lean pin-block closure correctly includes i64_floor_div/i64_mod/i64_shr (bound) and correctly excludes division_algorithm_diamond (unbound, as the refusal test claims); both cited shipped_binding test files reference the exact pin-block BEGIN markers; shipped_binding: lines immediately follow their lean_theorem: line as the parser requires. No other contract carries the new marker, and the change is scoped to the quorum command only.",
+      "findings": []
     }
   ],
-  "dissent": [],
-  "dedup": [
-    {
-      "file": "book/src/reference/cli.md",
-      "line": 178,
-      "lanes_agreeing": [
-        3
-      ],
-      "claims": [
-        "Reference documentation in book/src/reference/cli.md documents the pilot rule and incorporates the binary-checked table showing Semantic counts before and after the pilot."
-      ]
-    },
-    {
-      "file": "contracts/py-int-arith-v1.yaml",
-      "line": 4,
-      "lanes_agreeing": [
-        3
-      ],
-      "claims": [
-        "Pilot contracts C-PY-INT-ARITH and C-BASHRS-POSIX-IDEMPOTENCE opt in with quorum_semantic: shipped-bound; C-PY-INT-ARITH binds 3 obligations (floor div, mod, shr) to lean_shipped_pilot_witness.rs and C-BASHRS-POSIX-IDEMPOTENCE binds 1 obligation (composition_idempotence_diamond) to bashrs_idempotence_seam_witness.rs."
-      ]
-    },
-    {
-      "file": "crates/xpile/src/main.rs",
-      "line": 3281,
-      "lanes_agreeing": [
-        2,
-        3
-      ],
-      "claims": [
-        "In crates/xpile/src/main.rs, is_shipped_bound_pilot inspects metadata: for quorum_semantic: shipped-bound; when present, count_field_occurrences counts shipped_binding: instead of lean_theorem: for the Semantic stratum.",
-        "is_shipped_bound_pilot detects `quorum_semantic: shipped-bound` in contract metadata, causing xpile quorum to count `shipped_binding:` occurrences for pilot contracts and `lean_theorem:` for all other contracts, disclosing the rule in text and JSON output."
-      ]
-    },
-    {
-      "file": "crates/xpile/src/main.rs",
-      "line": 3320,
-      "lanes_agreeing": [
-        1
-      ],
-      "claims": [
-        "a contract with metadata quorum_semantic shipped-bound counts only obligations with a shipped_binding as Semantic votes"
-      ]
-    },
-    {
-      "file": "crates/xpile/tests/quorum_semantic_pilot_witness.rs",
-      "line": 218,
-      "lanes_agreeing": [
-        2
-      ],
-      "claims": [
-        "In crates/xpile/tests/quorum_semantic_pilot_witness.rs, check_pilot derives the bound theorem set from the Lean pin block's transitive closure over in-file defs, asserts bijection (derived == declared) against YAML shipped_binding annotations, and verifies that each test reads the pin block header."
-      ]
-    },
-    {
-      "file": "crates/xpile/tests/quorum_semantic_pilot_witness.rs",
-      "line": 249,
-      "lanes_agreeing": [
-        1
-      ],
-      "claims": [
-        "the shipped_binding set is derived from the Lean pin block, both ways, and each binding names a test that reads the block"
-      ]
-    },
-    {
-      "file": "crates/xpile/tests/quorum_semantic_pilot_witness.rs",
-      "line": 335,
-      "lanes_agreeing": [
-        3
-      ],
-      "claims": [
-        "quorum_semantic_pilot_witness.rs implements 7 comprehensive tests: deriving bound sets from Lean pin blocks both ways, refusing bindings on reimplementation theorems or tests that omit pin blocks, verifying binary tally and disclosure, demonstrating RED arm when pilot marker is stripped (42 -> 3), and enforcing doc sync against live markdown tables and quotes."
-      ]
-    },
-    {
-      "file": "crates/xpile/tests/quorum_semantic_pilot_witness.rs",
-      "line": 401,
-      "lanes_agreeing": [
-        1
-      ],
-      "claims": [
-        "a RED arm shows the old count (C-PY-INT-ARITH 42 -> 3); the report and JSON disclose the rule; other contracts are unchanged"
-      ]
-    },
-    {
-      "file": "crates/xpile/tests/quorum_semantic_pilot_witness.rs",
-      "line": 433,
-      "lanes_agreeing": [
-        2
-      ],
-      "claims": [
-        "In crates/xpile/tests/quorum_semantic_pilot_witness.rs, red_stripping_the_marker_restores_the_old_reimplementation_count asserts that stripping the pilot marker restores the old reimplementation count (C-PY-INT-ARITH 42 -> 3) and only pilot contracts change; the CLI text and JSON report disclose the pilot rule."
-      ]
-    },
-    {
-      "file": "crates/xpile/tests/quorum_semantic_pilot_witness.rs",
-      "line": 589,
-      "lanes_agreeing": [
-        2
-      ],
-      "claims": [
-        "In crates/xpile/tests/quorum_semantic_pilot_witness.rs, every_quorum_count_a_live_doc_quotes_is_what_the_binary_prints validates live markdown docs against binary output, and red_a_doc_quote_the_binary_no_longer_prints_is_refused proves stale quotes are rejected."
-      ]
-    },
-    {
-      "file": "crates/xpile/tests/quorum_semantic_pilot_witness.rs",
-      "line": 641,
-      "lanes_agreeing": [
-        1
-      ],
-      "claims": [
-        "a doc-sync gate reds when a live doc quotes a quorum row, totals line or pilot-table row the binary no longer prints"
-      ]
-    }
-  ],
-  "uncovered": [],
-  "coverage_source": "lanes",
-  "partial": false,
-  "partial_reasons": [
-    "lane 1: grounding NOT COMPARED — structured_output holds a verdict but no single verdict object could be read out of .response (6682 raw bytes), so agy's labels stand unchecked for this lane (PMAT-082)"
-  ],
-  "fallback": {
-    "same_family_width": 1,
-    "chain": [
-      {
-        "model": "gemini-3.1-pro-high",
-        "family": "gemini",
-        "disposition": "configured"
-      },
-      {
-        "model": "gemini-3.8-flash-high",
-        "family": "gemini",
-        "disposition": "configured"
-      },
-      {
-        "model": "gemini-3.7-flash-high",
-        "family": "gemini",
-        "disposition": "configured"
-      },
-      {
-        "model": "gpt-oss-120b-medium",
-        "family": "openai",
-        "disposition": "fallback"
-      },
-      {
-        "model": "qwen3.5",
-        "family": "qwen",
-        "disposition": "not-run",
-        "why": "no quorum.local_lane in the config — the aprender lane has no model to load"
-      },
-      {
-        "model": "claude-opus-4-6-thinking",
-        "family": "claude",
-        "disposition": "width",
-        "why": "same family as the author: at most 1 lane, recorded role width, counted toward no floor (R-15a)"
-      },
-      {
-        "model": "claude-sonnet-4-6",
-        "family": "claude",
-        "disposition": "width",
-        "why": "same family as the author: at most 1 lane, recorded role width, counted toward no floor (R-15a)"
-      }
-    ],
-    "precheck": [
-      {
-        "family": "gemini",
-        "model": "gemini-3.1-pro-high",
-        "probe": 1,
-        "outcome": "live"
-      }
-    ],
-    "prah": {
-      "source": "install-receipt",
-      "path": "/home/noah/.claude/skills/paiml-implement/bin/prah"
-    }
-  },
-  "auto_merge": {
-    "checked": true,
-    "was_armed": false,
-    "disarmed": false,
-    "note": "auto-merge not armed"
-  },
-  "lint": {
-    "ok": true,
-    "output": "receipt complete: kind=artifact lanes=3 author=claude-opus-5-5/claude"
+  "previous_round": {
+    "head": "bfe9be418528abfd2e1ba614dae558e8ba147307",
+    "diff_sha256": "42754bdc43042c254a94ecdc3a7b62a71c0e7f54950f8ccadfb3ed57232f1b17",
+    "note": "round 2 at this head: 3 gemini PASS, lane 1 coerced from an unfinished intermediate step (PMAT-082); not armed on"
   }
 }
