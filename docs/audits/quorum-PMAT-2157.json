@@ -1,0 +1,354 @@
+{
+  "ticket": "PMAT-2157",
+  "base": "main",
+  "base_resolved": "origin/main",
+  "base_note": "local main differs from origin/main by 3 commit(s); judged against origin/main",
+  "head": "f39e2f19a89322a8cc05b0e87705b6b02bac0ab8",
+  "diff_sha256": "eae64da0136a732bcad8b3a64a3657b2c46161951e7abe8d24f58859dcbb0cba",
+  "width": 3,
+  "executor": "agy",
+  "prompt_mode": "inline",
+  "prompt_bytes": 36470,
+  "author": {
+    "model": "claude-opus-5-5",
+    "family": "claude",
+    "source": "flag"
+  },
+  "agreed": true,
+  "lanes": [
+    {
+      "lane": 1,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff successfully implements the Lean-to-shipped pilot for PMAT-2157. It adds 84 pins and 19 duals to PyIntArith.lean, and implements a witness test in lean_shipped_pilot_witness.rs that parses the Lean model and compares it with the shipped Rust codegen execution. It accurately records that removing the floor correction fails the witness, and correctly records the Code lane coverage as 18 of 35 modules. All acceptance criteria are met and no assertions refute the ticket requirements.",
+      "findings": [
+        {
+          "claim": "contracts/lean/PyIntArith.lean ends with 84 decide pins covering the grid across dividends, divisors, and shifts, plus 19 Int.tdiv/Int.tmod != duals to differentiate floor semantics from truncation.",
+          "file": "contracts/lean/PyIntArith.lean",
+          "fix": "N/A (correct as implemented)",
+          "grounding": "cited",
+          "line": 3183
+        },
+        {
+          "claim": "crates/xpile/tests/lean_shipped_pilot_witness.rs asserts every pinned value (both equations and duals) is the shipped Rust output, covering the exact grid.",
+          "file": "crates/xpile/tests/lean_shipped_pilot_witness.rs",
+          "fix": "N/A (correct as implemented)",
+          "grounding": "cited",
+          "line": 17
+        },
+        {
+          "claim": "CHANGELOG.md correctly records that removing the floor correction turns the witness RED.",
+          "file": "CHANGELOG.md",
+          "fix": "N/A (correct as implemented)",
+          "grounding": "cited",
+          "line": 38
+        },
+        {
+          "claim": "CHANGELOG.md correctly records the Code lane coverage (18 of 35 modules) which is measured and verified to be accurate.",
+          "file": "CHANGELOG.md",
+          "fix": "N/A (correct as implemented)",
+          "grounding": "measured",
+          "line": 44
+        }
+      ],
+      "raw_bytes": 4371,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.1-pro-high",
+      "model_measured": "gemini-3.1-pro-high",
+      "model_source": "measured",
+      "family": "gemini",
+      "role": "independent",
+      "fallback": {
+        "judged_by": "gemini-3.1-pro-high",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gemini-3.1-pro-high",
+            "family": "gemini",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    },
+    {
+      "lane": 2,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff satisfies all acceptance criteria of PMAT-2157 with zero refuting findings:\n\n1. **Model & Dual Pins (Lean):** In `contracts/lean/PyIntArith.lean` (lines 3183–3292), 84 model equation pins (`i64_floor_div`, `i64_mod`, `i64_shr`) and 19 `=false` duals (`Int.tdiv`, `Int.tmod`, `Int.tdiv a (2^n)`) are added within the delimited block `-- BEGIN shipped pins (PMAT-2157)` to `-- END shipped pins (PMAT-2157)`. The duals prove that floor semantics diverge from truncating semantics across these points.\n2. **Witness Test (Cargo):** `crates/xpile/tests/lean_shipped_pilot_witness.rs` parses the pins from `PyIntArith.lean`. `the_pins_cover_the_grid_and_every_op_has_a_dual` enforces exact coverage of the 6 dividends (`[-7, 7, -6, 0, i64::MAX, i64::MIN]`), 5 divisors (`[2, -2, 3, -3, 1]`), and 4 shifts (`[0, 1, 3, 63]`), and verifies that every op retains at least one dual on the grid. `every_pin_is_the_shipped_output` transpiles Python definitions of `//`, `%`, and `>>` via `xpile transpile --target rust`, compiles the output using `rustc`, executes the binary, and asserts exact agreement against all 103 pins.\n3. **Falsification & Coverage Recorded:** Both `CHANGELOG.md` and the test witness documentation record the executed falsifications (removing `emit_floor_div`'s floor correction turns the witness RED on `(-7, 2)`: pinned -4, shipped -3; changing `i64_floor_div` to `Int.tdiv` in Lean turns `lake build PyIntArith` RED on 7 pins). Code lane coverage is honestly recorded as 18 of 35 core modules carrying a `Code lane:` line (measured and verified against the repository).\n4. **Scope & Gate Integrity:** PMAT-2157 is registered in `docs/roadmaps/roadmap.yaml` under Epic #2125 with matching criteria. No gates were weakened, no out-of-scope files were touched, and no background processes remain active.",
+      "findings": [
+        {
+          "claim": "The Lean contract in contracts/lean/PyIntArith.lean terminates with 84 decide equation pins covering the grid of 6 dividends (including i64::MIN and i64::MAX), 5 divisors, and 4 shift amounts, plus 19 `≠` duals demonstrating that the pins distinguish floor semantics from truncating integer arithmetic.",
+          "file": "contracts/lean/PyIntArith.lean",
+          "fix": "N/A (correct as implemented)",
+          "grounding": "cited",
+          "line": 3183
+        },
+        {
+          "claim": "The integration test witness in crates/xpile/tests/lean_shipped_pilot_witness.rs parses the pins directly from PyIntArith.lean, asserts complete grid coverage with duals for every op, transpiles Python //, %, and >> via xpile transpile --target rust, compiles the output with rustc, and asserts that every pinned equation and dual matches the shipped execution result.",
+          "file": "crates/xpile/tests/lean_shipped_pilot_witness.rs",
+          "fix": "N/A (correct as implemented)",
+          "grounding": "cited",
+          "line": 81
+        },
+        {
+          "claim": "CHANGELOG.md accurately records that 18 of the 35 core Lean modules carry a Code lane: line, and that PyIntArith is the first checked against shipped output for //, %, and >>. Measured: exactly 18 of the 35 core modules in contracts/lean/ carry 'Code lane:'.",
+          "file": "CHANGELOG.md",
+          "fix": "N/A (correct as implemented)",
+          "grounding": "measured",
+          "line": 44
+        },
+        {
+          "claim": "Roadmap entry PMAT-2157 in docs/roadmaps/roadmap.yaml accurately defines the task under Epic #2125 with acceptance criteria matching the implemented witness, executed falsification records, and Code lane coverage metrics.",
+          "file": "docs/roadmaps/roadmap.yaml",
+          "fix": "N/A (correct as implemented)",
+          "grounding": "cited",
+          "line": 27301
+        }
+      ],
+      "raw_bytes": 8376,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.8-flash-high",
+      "model_measured": "gemini-3.8-flash-high",
+      "model_source": "measured",
+      "family": "gemini",
+      "role": "independent",
+      "fallback": {
+        "judged_by": "gemini-3.8-flash-high",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gemini-3.8-flash-high",
+            "family": "gemini",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    },
+    {
+      "lane": 3,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff for PMAT-2157 implements the Lean-to-shipped pilot by adding 84 grid pins and 19 != duals to contracts/lean/PyIntArith.lean and a dual-checking test witness crates/xpile/tests/lean_shipped_pilot_witness.rs. The witness parses Lean pins directly, verifies exact grid coverage, transpiles Python code using the shipped xpile binary, compiles with rustc, and validates that all pins match shipped behavior. All acceptance criteria are satisfied, coverage is accurately recorded, and no refuting issues or weakened gates were found. Verdict: PASS.",
+      "findings": [
+        {
+          "claim": "contracts/lean/PyIntArith.lean adds 84 equation pins covering the (op, a, b) grid across 6 dividends (including i64::MIN and i64::MAX), 5 divisors, and 4 shift amounts, plus 19 Int.tdiv/Int.tmod != duals showing that the pins distinguish floor semantics from truncating arithmetic.",
+          "file": "contracts/lean/PyIntArith.lean",
+          "fix": "N/A (correct as implemented)",
+          "grounding": "cited",
+          "line": 3184
+        },
+        {
+          "claim": "crates/xpile/tests/lean_shipped_pilot_witness.rs directly parses pins from PyIntArith.lean, asserts complete grid coverage with duals for all ops, transpiles Python //, %, and >> via xpile transpile --target rust, compiles with rustc, and asserts that every pinned equation and dual matches the shipped execution output.",
+          "file": "crates/xpile/tests/lean_shipped_pilot_witness.rs",
+          "fix": "N/A (correct as implemented)",
+          "grounding": "cited",
+          "line": 262
+        },
+        {
+          "claim": "CHANGELOG.md accurately records that 18 of the 35 core Lean modules carry a Code lane: line, and that PyIntArith is checked against shipped output for //, %, and >>. Measured: contracts/lean/ has 36 .lean files (including lakefile.lean), exactly 18 of the 35 core modules contain 'Code lane:'.",
+          "file": "CHANGELOG.md",
+          "fix": "N/A (correct as implemented)",
+          "grounding": "measured",
+          "line": 44
+        },
+        {
+          "claim": "docs/roadmaps/roadmap.yaml registers PMAT-2157 with acceptance criteria matching the test witness, falsification mutant behaviors, and honest recording of Code lane coverage.",
+          "file": "docs/roadmaps/roadmap.yaml",
+          "fix": "N/A (correct as implemented)",
+          "grounding": "cited",
+          "line": 27301
+        }
+      ],
+      "raw_bytes": 5606,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.7-flash-high",
+      "model_measured": "gemini-3.7-flash-high",
+      "model_source": "measured",
+      "family": "gemini",
+      "role": "independent",
+      "fallback": {
+        "judged_by": "gemini-3.7-flash-high",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gemini-3.7-flash-high",
+            "family": "gemini",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    }
+  ],
+  "dissent": [],
+  "dedup": [
+    {
+      "file": "CHANGELOG.md",
+      "line": 38,
+      "lanes_agreeing": [
+        1
+      ],
+      "claims": [
+        "CHANGELOG.md correctly records that removing the floor correction turns the witness RED."
+      ]
+    },
+    {
+      "file": "CHANGELOG.md",
+      "line": 44,
+      "lanes_agreeing": [
+        1,
+        2,
+        3
+      ],
+      "claims": [
+        "CHANGELOG.md accurately records that 18 of the 35 core Lean modules carry a Code lane: line, and that PyIntArith is checked against shipped output for //, %, and >>. Measured: contracts/lean/ has 36 .lean files (including lakefile.lean), exactly 18 of the 35 core modules contain 'Code lane:'.",
+        "CHANGELOG.md accurately records that 18 of the 35 core Lean modules carry a Code lane: line, and that PyIntArith is the first checked against shipped output for //, %, and >>. Measured: exactly 18 of the 35 core modules in contracts/lean/ carry 'Code lane:'.",
+        "CHANGELOG.md correctly records the Code lane coverage (18 of 35 modules) which is measured and verified to be accurate."
+      ]
+    },
+    {
+      "file": "contracts/lean/PyIntArith.lean",
+      "line": 3183,
+      "lanes_agreeing": [
+        1,
+        2
+      ],
+      "claims": [
+        "The Lean contract in contracts/lean/PyIntArith.lean terminates with 84 decide equation pins covering the grid of 6 dividends (including i64::MIN and i64::MAX), 5 divisors, and 4 shift amounts, plus 19 `≠` duals demonstrating that the pins distinguish floor semantics from truncating integer arithmetic.",
+        "contracts/lean/PyIntArith.lean ends with 84 decide pins covering the grid across dividends, divisors, and shifts, plus 19 Int.tdiv/Int.tmod != duals to differentiate floor semantics from truncation."
+      ]
+    },
+    {
+      "file": "contracts/lean/PyIntArith.lean",
+      "line": 3184,
+      "lanes_agreeing": [
+        3
+      ],
+      "claims": [
+        "contracts/lean/PyIntArith.lean adds 84 equation pins covering the (op, a, b) grid across 6 dividends (including i64::MIN and i64::MAX), 5 divisors, and 4 shift amounts, plus 19 Int.tdiv/Int.tmod != duals showing that the pins distinguish floor semantics from truncating arithmetic."
+      ]
+    },
+    {
+      "file": "crates/xpile/tests/lean_shipped_pilot_witness.rs",
+      "line": 17,
+      "lanes_agreeing": [
+        1
+      ],
+      "claims": [
+        "crates/xpile/tests/lean_shipped_pilot_witness.rs asserts every pinned value (both equations and duals) is the shipped Rust output, covering the exact grid."
+      ]
+    },
+    {
+      "file": "crates/xpile/tests/lean_shipped_pilot_witness.rs",
+      "line": 81,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "The integration test witness in crates/xpile/tests/lean_shipped_pilot_witness.rs parses the pins directly from PyIntArith.lean, asserts complete grid coverage with duals for every op, transpiles Python //, %, and >> via xpile transpile --target rust, compiles the output with rustc, and asserts that every pinned equation and dual matches the shipped execution result."
+      ]
+    },
+    {
+      "file": "crates/xpile/tests/lean_shipped_pilot_witness.rs",
+      "line": 262,
+      "lanes_agreeing": [
+        3
+      ],
+      "claims": [
+        "crates/xpile/tests/lean_shipped_pilot_witness.rs directly parses pins from PyIntArith.lean, asserts complete grid coverage with duals for all ops, transpiles Python //, %, and >> via xpile transpile --target rust, compiles with rustc, and asserts that every pinned equation and dual matches the shipped execution output."
+      ]
+    },
+    {
+      "file": "docs/roadmaps/roadmap.yaml",
+      "line": 27301,
+      "lanes_agreeing": [
+        2,
+        3
+      ],
+      "claims": [
+        "Roadmap entry PMAT-2157 in docs/roadmaps/roadmap.yaml accurately defines the task under Epic #2125 with acceptance criteria matching the implemented witness, executed falsification records, and Code lane coverage metrics.",
+        "docs/roadmaps/roadmap.yaml registers PMAT-2157 with acceptance criteria matching the test witness, falsification mutant behaviors, and honest recording of Code lane coverage."
+      ]
+    }
+  ],
+  "uncovered": [],
+  "coverage_source": "lanes",
+  "partial": false,
+  "partial_reasons": [],
+  "fallback": {
+    "same_family_width": 1,
+    "chain": [
+      {
+        "model": "gemini-3.1-pro-high",
+        "family": "gemini",
+        "disposition": "configured"
+      },
+      {
+        "model": "gemini-3.8-flash-high",
+        "family": "gemini",
+        "disposition": "configured"
+      },
+      {
+        "model": "gemini-3.7-flash-high",
+        "family": "gemini",
+        "disposition": "configured"
+      },
+      {
+        "model": "gpt-oss-120b-medium",
+        "family": "openai",
+        "disposition": "fallback"
+      },
+      {
+        "model": "qwen3.5",
+        "family": "qwen",
+        "disposition": "not-run",
+        "why": "no quorum.local_lane in the config — the aprender lane has no model to load"
+      },
+      {
+        "model": "claude-opus-4-6-thinking",
+        "family": "claude",
+        "disposition": "width",
+        "why": "same family as the author: at most 1 lane, recorded role width, counted toward no floor (R-15a)"
+      },
+      {
+        "model": "claude-sonnet-4-6",
+        "family": "claude",
+        "disposition": "width",
+        "why": "same family as the author: at most 1 lane, recorded role width, counted toward no floor (R-15a)"
+      }
+    ],
+    "precheck": [
+      {
+        "family": "gemini",
+        "model": "gemini-3.1-pro-high",
+        "probe": 1,
+        "outcome": "live"
+      }
+    ],
+    "prah": {
+      "source": "install-receipt",
+      "path": "/home/noah/.claude/skills/paiml-implement/bin/prah"
+    }
+  },
+  "auto_merge": {
+    "checked": true,
+    "was_armed": true,
+    "disarmed": true,
+    "note": "auto-merge was armed from an earlier round; disarmed before lanes launched"
+  },
+  "lint": {
+    "ok": true,
+    "output": "receipt complete: kind=artifact lanes=3 author=claude-opus-5-5/claude"
+  }
+}

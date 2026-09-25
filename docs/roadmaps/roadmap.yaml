@@ -27298,3 +27298,23 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
   labels:
   - kind:code
   notes: 'Epic #2125 (v0.1.620). Follow-up to PMAT-2151 (PR #2152), from its quorum lane 3. The issue counted 19 variants; the enum has 20 (Ptr). Payload variants live in a second harness with mem::forget, because recursive Type drop glue timed CBMC out.'
+- id: PMAT-2157
+  github_issue: 2157
+  item_type: task
+  title: "proofs: Lean-to-shipped pilot, PyIntArith floor-div/mod/shr checked against xpile's emitted Rust"
+  status: inprogress
+  priority: medium
+  assigned_to: null
+  created: 2026-09-25T00:00:00Z
+  updated: 2026-09-25T00:00:00Z
+  spec: null
+  acceptance_criteria:
+  - a witness checks PyIntArith's model and its =false duals against the shipped Rust codegen's output on the same inputs
+  - removing the shipped floor correction turns the witness RED, and the run is recorded
+  - the Code lane coverage (18 of 35 modules) is recorded, not promised
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'Epic #2125 (v0.1.620), row 2. Split at committed pins because no CI job has both lake and cargo: lake build checks model = pin, and lean_shipped_pilot_witness.rs checks pin = shipped.'
