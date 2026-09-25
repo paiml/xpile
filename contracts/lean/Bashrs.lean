@@ -1001,4 +1001,170 @@ theorem outcome_roundtrip_identity_diamond (o : Outcome) :
   · rfl
   · rfl
 
+/-!
+  ## Shell-composition idempotence over a filesystem state (PMAT-469)
+
+  The Platinum theorem `bashrs_run_is_idempotent_platinum` above states
+  `f x = f x`, which holds for every function and so says nothing about
+  idempotence. This section models the claim the contract is named after:
+  running a command twice leaves the same state as running it once,
+  `run c (run c s) = run c s`.
+
+  The state is a filesystem from path to entry plus an environment. An entry
+  is a directory or a file, with a mode and (for files) content. Timestamps
+  are not modelled, so `touch` on an existing path is a no-op here although
+  a real `touch` updates the mtime.
+
+  `idem c = true` marks the idempotent subset: `mkdir -p`, `touch`, `chmod`,
+  the `>` redirect and a variable assignment. The `>>` append is outside it,
+  and `append_is_not_idempotent` proves that it really fails the law, so the
+  subset's boundary is not vacuous.
+
+  The seam to xpile's shipped emitter is the pin block at the end:
+  `crates/xpile/tests/bashrs_idempotence_seam_witness.rs` transpiles each
+  pinned command through `xpile transpile --target shell`, runs the emitted
+  script once and twice in an empty directory (umask 022), and checks the
+  observed entry against the model's.
+-/
+namespace Shell
+
+inductive Entry where
+  | dir (mode : String)
+  | file (mode : String) (content : String)
+deriving DecidableEq, Repr
+
+structure St where
+  fs : String → Option Entry
+  env : String → Option String
+
+/-- Replace the value at `k` by `g` of the old value; every other key is kept. -/
+def alter {α : Type} (k : String) (g : Option α → Option α) (m : String → Option α) :
+    String → Option α :=
+  fun q => if q = k then g (m k) else m q
+
+theorem alter_idem {α : Type} (k : String) (g : Option α → Option α)
+    (hg : ∀ x, g (g x) = g x) (m : String → Option α) :
+    alter k g (alter k g m) = alter k g m := by
+  funext q
+  by_cases h : q = k
+  · subst h; simp [alter, hg]
+  · simp [alter, h]
+
+inductive Cmd where
+  | mkdirP (p : String)
+  | touch (p : String)
+  | chmod (mode : String) (p : String)
+  | write (p : String) (c : String)
+  | append (p : String) (c : String)
+  | assign (v : String) (x : String)
+deriving DecidableEq, Repr
+
+/-- What each command does to the entry at its path. -/
+def step : Cmd → Option Entry → Option Entry
+  | .mkdirP _, none => some (.dir "755")
+  | .mkdirP _, some e => some e
+  | .touch _, none => some (.file "644" "")
+  | .touch _, some e => some e
+  | .chmod _ _, none => none
+  | .chmod m _, some (.dir _) => some (.dir m)
+  | .chmod m _, some (.file _ c) => some (.file m c)
+  | .write _ c, none => some (.file "644" c)
+  | .write _ c, some (.file m _) => some (.file m c)
+  | .write _ _, some (.dir m) => some (.dir m)
+  | .append _ c, none => some (.file "644" c)
+  | .append _ c, some (.file m d) => some (.file m (d ++ c))
+  | .append _ _, some (.dir m) => some (.dir m)
+  | .assign _ _, e => e
+
+def path : Cmd → String
+  | .mkdirP p | .touch p | .chmod _ p | .write p _ | .append p _ => p
+  | .assign v _ => v
+
+def run (c : Cmd) (s : St) : St :=
+  match c with
+  | .assign v x => { s with env := alter v (fun _ => some x) s.env }
+  | _ => { s with fs := alter (path c) (step c) s.fs }
+
+/-- The idempotent subset. -/
+def idem : Cmd → Bool
+  | .append _ _ => false
+  | _ => true
+
+theorem step_idem (c : Cmd) (h : idem c = true) (x : Option Entry) :
+    step c (step c x) = step c x := by
+  cases c <;> simp [idem] at h <;>
+    (cases x with
+     | none => rfl
+     | some e => cases e <;> rfl)
+
+/--
+  **Composition idempotence** (PMAT-469): for every command in the idempotent
+  subset and every state, running it twice equals running it once.
+-/
+theorem composition_idempotence_diamond (c : Cmd) (h : idem c = true) (s : St) :
+    run c (run c s) = run c s := by
+  cases c with
+  | assign v x =>
+    simp only [run]
+    rw [alter_idem v (fun _ => some x) (fun _ => rfl)]
+  | append p c => simp [idem] at h
+  | _ =>
+    simp only [run]
+    rw [alter_idem _ _ (step_idem _ h)]
+
+/-- The empty state every pin starts from. -/
+def s0 : St := ⟨fun _ => none, fun _ => none⟩
+
+/-- `>>` is outside the subset for a reason: twice is not once. -/
+theorem append_is_not_idempotent :
+    (run (.append "f" "ab") (run (.append "f" "ab") s0)).fs "f" ≠
+      (run (.append "f" "ab") s0).fs "f" := by
+  decide
+
+/-- Running idempotent commands in sequence is not idempotent in general:
+    `chmod` before `touch` on an absent path does nothing the first time. -/
+theorem sequence_of_idempotent_is_not_idempotent :
+    let p := fun s => run (.touch "f") (run (.chmod "700" "f") s)
+    (p (p s0)).fs "f" ≠ (p s0).fs "f" := by
+  decide
+
+/-- The shell text xpile is given for each command. -/
+def render : Cmd → String
+  | .mkdirP p => "mkdir -p " ++ p
+  | .touch p => "touch " ++ p
+  | .chmod m p => "chmod " ++ m ++ " " ++ p
+  | .write p c => "printf " ++ c ++ " > " ++ p
+  | .append p c => "printf " ++ c ++ " >> " ++ p
+  | .assign v x => v ++ "=" ++ x
+
+def obs : Option Entry → String
+  | none => "absent"
+  | some (.dir m) => "dir " ++ m
+  | some (.file m c) => "file " ++ m ++ " " ++ c
+
+/-- One pin: the command's text, whether the model puts it in the idempotent
+    subset, and the observed entry at its path after `setup` then the command
+    once, and after `setup` then the command twice. -/
+def pin (setup : List Cmd) (c : Cmd) : String × Bool × String × String :=
+  let s := setup.foldl (fun s d => run d s) s0
+  (render c, idem c, obs ((run c s).fs (path c)), obs ((run c (run c s)).fs (path c)))
+
+/-
+  The witness parses this block, so keep one pin per line in this exact form.
+-/
+-- BEGIN shell idempotence pins (PMAT-469)
+example : pin [] (.mkdirP "d") = ("mkdir -p d", true, "dir 755", "dir 755") := by decide
+example : pin [.mkdirP "d"] (.mkdirP "d") = ("mkdir -p d", true, "dir 755", "dir 755") := by decide
+example : pin [] (.touch "f") = ("touch f", true, "file 644 ", "file 644 ") := by decide
+example : pin [.write "f" "x"] (.touch "f") = ("touch f", true, "file 644 x", "file 644 x") := by decide
+example : pin [.touch "f"] (.chmod "700" "f") = ("chmod 700 f", true, "file 700 ", "file 700 ") := by decide
+example : pin [.mkdirP "d"] (.chmod "700" "d") = ("chmod 700 d", true, "dir 700", "dir 700") := by decide
+example : pin [] (.write "f" "ab") = ("printf ab > f", true, "file 644 ab", "file 644 ab") := by decide
+example : pin [.write "f" "old"] (.write "f" "ab") = ("printf ab > f", true, "file 644 ab", "file 644 ab") := by decide
+example : pin [] (.append "f" "ab") = ("printf ab >> f", false, "file 644 ab", "file 644 abab") := by decide
+example : pin [.write "f" "x"] (.append "f" "ab") = ("printf ab >> f", false, "file 644 xab", "file 644 xabab") := by decide
+-- END shell idempotence pins (PMAT-469)
+
+end Shell
+
 end XpileContracts.CBashrsPosixIdempotence

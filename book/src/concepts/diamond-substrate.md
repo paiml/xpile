@@ -94,7 +94,7 @@ depth: 0 Diamonds = none, N Diamonds = depth-N (exact — the column is never bu
   ------------------------------------------------------------
   C-PY-INT-ARITH                                21  depth-21
   C-COMPILE-RUST-TO-PTX-MMA                     20  depth-20
-  C-BASHRS-POSIX-IDEMPOTENCE                    13  depth-13
+  C-BASHRS-POSIX-IDEMPOTENCE                    14  depth-14
   C-FFI-CPYTHON-EXT                             13  depth-13
   C-NOTATION-LATEX-MATH-TO-EQUATION             13  depth-13
   ...

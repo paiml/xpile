@@ -1,0 +1,322 @@
+{
+  "ticket": "PMAT-2161",
+  "base": "main",
+  "base_resolved": "origin/main",
+  "base_note": "local main differs from origin/main by 5 commit(s); judged against origin/main",
+  "head": "f09b2cce7631387cfd82015c71217ec95d7bcdf6",
+  "diff_sha256": "d74d8b25e6dcb38a5c952383324f653fd090b0a5bee0b937d98d09db33f19a56",
+  "width": 3,
+  "executor": "agy",
+  "prompt_mode": "inline",
+  "prompt_bytes": 52930,
+  "author": {
+    "model": "claude-opus-5-5",
+    "family": "claude",
+    "source": "flag"
+  },
+  "agreed": true,
+  "lanes": [
+    {
+      "lane": 1,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff successfully proves shell-composition idempotence in Lean for the specified commands and binds the model to the shipped emitter via the 10 pinned execution checks in `bashrs_idempotence_seam_witness.rs`. The exceptions to idempotence are formally demonstrated, and the execution witness effectively validates the transpiled commands against the Lean predictions. The runtime property ledger is correctly updated (from 8 to 7 residue), and all artifact counts are updated in the relevant Markdown and YAML specs. No claims were refuted.",
+      "findings": [
+        {
+          "claim": "composition_idempotence_diamond proves run c (run c s) = run c s for mkdir -p, touch, chmod, > and VAR=x; the >> and chmod-then-touch duals are proven false",
+          "file": "contracts/lean/Bashrs.lean",
+          "grounding": "cited",
+          "line": 1098
+        },
+        {
+          "claim": "Lean pins are transpiled through the shipped bashrs path, run once and twice, and match the model; an emitter mutant turns a pin red",
+          "file": "crates/xpile/tests/bashrs_idempotence_seam_witness.rs",
+          "grounding": "cited",
+          "line": 329
+        },
+        {
+          "claim": "wired as FALSIFY-BASHRS-POSIX-IDEMP-004",
+          "file": "contracts/bashrs-posix-idempotence-v1.yaml",
+          "grounding": "cited",
+          "line": 671
+        },
+        {
+          "claim": "the runtime-property ledger row moves from residue to executes (8 -> 7 of 35)",
+          "file": "crates/xpile/tests/runtime_property_ledger_witness.rs",
+          "grounding": "cited",
+          "line": 80
+        }
+      ],
+      "raw_bytes": 5408,
+      "err_bytes": 62,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.1-pro-high",
+      "model_measured": "gemini-3.1-pro-high",
+      "model_source": "measured",
+      "family": "gemini",
+      "role": "independent",
+      "fallback": {
+        "judged_by": "gemini-3.1-pro-high",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gemini-3.1-pro-high",
+            "family": "gemini",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    },
+    {
+      "lane": 2,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff fully implements ticket PMAT-2161 (legacy PMAT-469):\n1. Proves composition idempotence in Lean (`Shell.composition_idempotence_diamond`) for `mkdir -p`, `touch`, `chmod`, `>`, and `VAR=x` over a state of filesystem entries plus environment, with both non-idempotent duals (`>>` append and `chmod`-then-`touch` on absent paths) proven false.\n2. Binds the Lean model to xpile's shipped shell emitter via 10 pins executed once and twice in `crates/xpile/tests/bashrs_idempotence_seam_witness.rs`, accompanied by four RED arms verifying detector sharpness.\n3. Wires the witness as ship-blocking `FALSIFY-BASHRS-POSIX-IDEMP-004`, advancing `C-BASHRS-POSIX-IDEMPOTENCE` to diamond depth 14.\n4. Moves the contract's row in `crates/xpile/tests/runtime_property_ledger_witness.rs` from residue to executes, updating documented residue from 8 to 7 of 35 and Lean theorems from 489 to 494 across `audit-design.md`, `kaizen-fleet.md`, and `roadmap.yaml`.\nNo refutations found; no gates weakened.",
+      "findings": [
+        {
+          "claim": "Shell.composition_idempotence_diamond proves run c (run c s) = run c s for the idempotent command subset (mkdir -p, touch, chmod, >, VAR=x) over a state consisting of a filesystem and environment. The non-idempotent duals append_is_not_idempotent (for >>) and sequence_of_idempotent_is_not_idempotent (for chmod then touch on absent path) are proven false via decide.",
+          "file": "contracts/lean/Bashrs.lean",
+          "fix": "N/A (correct as implemented)",
+          "grounding": "cited",
+          "line": 1104
+        },
+        {
+          "claim": "every_lean_idempotence_pin_matches_the_shipped_emitter parses 10 Lean pins from contracts/lean/Bashrs.lean, transpiles each command through xpile transpile --target shell, executes them once and twice under /bin/sh with umask 022, and verifies against model predictions. Four red arms verify refusal on incorrect claims, observations, render disagreements, and malformed pin lines.",
+          "file": "crates/xpile/tests/bashrs_idempotence_seam_witness.rs",
+          "fix": "N/A (correct as implemented)",
+          "grounding": "cited",
+          "line": 283
+        },
+        {
+          "claim": "FALSIFY-BASHRS-POSIX-IDEMP-004 is added as a ship-blocking falsification test binding bashrs_idempotence_seam_witness.rs. composition_idempotence_diamond is recorded under equations, advancing C-BASHRS-POSIX-IDEMPOTENCE to diamond depth 14.",
+          "file": "contracts/bashrs-posix-idempotence-v1.yaml",
+          "fix": "N/A (correct as implemented)",
+          "grounding": "cited",
+          "line": 671
+        },
+        {
+          "claim": "C-BASHRS-POSIX-IDEMPOTENCE moves from Kind::Residue to Kind::Executes via same_file, targeting every_lean_idempotence_pin_matches_the_shipped_emitter with probe check_pin. Measured: exactly 7 contracts remain in Residue, and audit-design.md updates the published sentence to '7 of 35'.",
+          "file": "crates/xpile/tests/runtime_property_ledger_witness.rs",
+          "fix": "N/A (correct as implemented)",
+          "grounding": "measured",
+          "line": 79
+        },
+        {
+          "claim": "Substrate proof volume tallies update from 489 to 494 Lean refinement theorems and 593 to 598 total stratum-vote artifacts (494 Lean + 104 Kani). Measured: contracts/lean/ declaration count matches 494 with exactly 5 new theorems added in Bashrs.lean.",
+          "file": "docs/specifications/sub/kaizen-fleet.md",
+          "fix": "N/A (correct as implemented)",
+          "grounding": "measured",
+          "line": 141
+        }
+      ],
+      "raw_bytes": 7828,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.8-flash-high",
+      "model_measured": "gemini-3.8-flash-high",
+      "model_source": "measured",
+      "family": "gemini",
+      "role": "independent",
+      "fallback": {
+        "judged_by": "gemini-3.8-flash-high",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gemini-3.8-flash-high",
+            "family": "gemini",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    },
+    {
+      "lane": 3,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff for PMAT-2161 (legacy PMAT-469) was thoroughly reviewed against all ticket acceptance criteria and repository gate invariants:\n\n1. Lean Idempotence Theorem & Duals: `contracts/lean/Bashrs.lean` defines the `Shell` namespace modeling filesystem state (`Entry`, `St`, `Cmd`, `step`, `run`, `idem`), proves `composition_idempotence_diamond` (`run c (run c s) = run c s` for `idem c = true` covering mkdir -p, touch, chmod, >, and VAR=x), and proves both non-vacuity duals (`append_is_not_idempotent` and `sequence_of_idempotent_is_not_idempotent`).\n2. Seam Witness & Emitter Binding: `crates/xpile/tests/bashrs_idempotence_seam_witness.rs` parses the 10 Lean pins, transpiles each command through `xpile transpile --target shell`, executes once and twice under `/bin/sh` (umask 022), validates against the model's observed filesystem state, and verifies RED mutant arms.\n3. Contract Falsifier & Runtime Ledger: `contracts/bashrs-posix-idempotence-v1.yaml` registers `composition_idempotence_diamond` and `FALSIFY-BASHRS-POSIX-IDEMP-004`. `crates/xpile/tests/runtime_property_ledger_witness.rs` moves `C-BASHRS-POSIX-IDEMPOTENCE` from Residue to Executes via `same_file` pointing to the seam witness.\n4. Metric & Doc Integrity: Substrate Diamond depth for `C-BASHRS-POSIX-IDEMPOTENCE` advances to 14 (`book/src/concepts/diamond-substrate.md`), Lean declarations count advances 489 -> 494 (and 593 -> 598 stratum-vote artifacts) in `audit-design.md` and `kaizen-fleet.md`, residue count updates 8 -> 7 of 35, and check-back 3 in `sub/bashrs-merger.md` is recorded as partly discharged.\n\nNo gate weakening, claim discrepancy, or out-of-scope modification was found. Verdict: PASS.",
+      "findings": [],
+      "raw_bytes": 4797,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.7-flash-high",
+      "model_measured": "gemini-3.7-flash-high",
+      "model_source": "measured",
+      "family": "gemini",
+      "role": "independent",
+      "fallback": {
+        "judged_by": "gemini-3.7-flash-high",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gemini-3.7-flash-high",
+            "family": "gemini",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    }
+  ],
+  "dissent": [],
+  "dedup": [
+    {
+      "file": "contracts/bashrs-posix-idempotence-v1.yaml",
+      "line": 671,
+      "lanes_agreeing": [
+        1,
+        2
+      ],
+      "claims": [
+        "FALSIFY-BASHRS-POSIX-IDEMP-004 is added as a ship-blocking falsification test binding bashrs_idempotence_seam_witness.rs. composition_idempotence_diamond is recorded under equations, advancing C-BASHRS-POSIX-IDEMPOTENCE to diamond depth 14.",
+        "wired as FALSIFY-BASHRS-POSIX-IDEMP-004"
+      ]
+    },
+    {
+      "file": "contracts/lean/Bashrs.lean",
+      "line": 1098,
+      "lanes_agreeing": [
+        1
+      ],
+      "claims": [
+        "composition_idempotence_diamond proves run c (run c s) = run c s for mkdir -p, touch, chmod, > and VAR=x; the >> and chmod-then-touch duals are proven false"
+      ]
+    },
+    {
+      "file": "contracts/lean/Bashrs.lean",
+      "line": 1104,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "Shell.composition_idempotence_diamond proves run c (run c s) = run c s for the idempotent command subset (mkdir -p, touch, chmod, >, VAR=x) over a state consisting of a filesystem and environment. The non-idempotent duals append_is_not_idempotent (for >>) and sequence_of_idempotent_is_not_idempotent (for chmod then touch on absent path) are proven false via decide."
+      ]
+    },
+    {
+      "file": "crates/xpile/tests/bashrs_idempotence_seam_witness.rs",
+      "line": 283,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "every_lean_idempotence_pin_matches_the_shipped_emitter parses 10 Lean pins from contracts/lean/Bashrs.lean, transpiles each command through xpile transpile --target shell, executes them once and twice under /bin/sh with umask 022, and verifies against model predictions. Four red arms verify refusal on incorrect claims, observations, render disagreements, and malformed pin lines."
+      ]
+    },
+    {
+      "file": "crates/xpile/tests/bashrs_idempotence_seam_witness.rs",
+      "line": 329,
+      "lanes_agreeing": [
+        1
+      ],
+      "claims": [
+        "Lean pins are transpiled through the shipped bashrs path, run once and twice, and match the model; an emitter mutant turns a pin red"
+      ]
+    },
+    {
+      "file": "crates/xpile/tests/runtime_property_ledger_witness.rs",
+      "line": 79,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "C-BASHRS-POSIX-IDEMPOTENCE moves from Kind::Residue to Kind::Executes via same_file, targeting every_lean_idempotence_pin_matches_the_shipped_emitter with probe check_pin. Measured: exactly 7 contracts remain in Residue, and audit-design.md updates the published sentence to '7 of 35'."
+      ]
+    },
+    {
+      "file": "crates/xpile/tests/runtime_property_ledger_witness.rs",
+      "line": 80,
+      "lanes_agreeing": [
+        1
+      ],
+      "claims": [
+        "the runtime-property ledger row moves from residue to executes (8 -> 7 of 35)"
+      ]
+    },
+    {
+      "file": "docs/specifications/sub/kaizen-fleet.md",
+      "line": 141,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "Substrate proof volume tallies update from 489 to 494 Lean refinement theorems and 593 to 598 total stratum-vote artifacts (494 Lean + 104 Kani). Measured: contracts/lean/ declaration count matches 494 with exactly 5 new theorems added in Bashrs.lean."
+      ]
+    }
+  ],
+  "uncovered": [],
+  "coverage_source": "lanes",
+  "partial": false,
+  "partial_reasons": [],
+  "fallback": {
+    "same_family_width": 1,
+    "chain": [
+      {
+        "model": "gemini-3.1-pro-high",
+        "family": "gemini",
+        "disposition": "configured"
+      },
+      {
+        "model": "gemini-3.8-flash-high",
+        "family": "gemini",
+        "disposition": "configured"
+      },
+      {
+        "model": "gemini-3.7-flash-high",
+        "family": "gemini",
+        "disposition": "configured"
+      },
+      {
+        "model": "gpt-oss-120b-medium",
+        "family": "openai",
+        "disposition": "fallback"
+      },
+      {
+        "model": "qwen3.5",
+        "family": "qwen",
+        "disposition": "not-run",
+        "why": "no quorum.local_lane in the config — the aprender lane has no model to load"
+      },
+      {
+        "model": "claude-opus-4-6-thinking",
+        "family": "claude",
+        "disposition": "width",
+        "why": "same family as the author: at most 1 lane, recorded role width, counted toward no floor (R-15a)"
+      },
+      {
+        "model": "claude-sonnet-4-6",
+        "family": "claude",
+        "disposition": "width",
+        "why": "same family as the author: at most 1 lane, recorded role width, counted toward no floor (R-15a)"
+      }
+    ],
+    "precheck": [
+      {
+        "family": "gemini",
+        "model": "gemini-3.1-pro-high",
+        "probe": 1,
+        "outcome": "live"
+      }
+    ],
+    "prah": {
+      "source": "install-receipt",
+      "path": "/home/noah/.claude/skills/paiml-implement/bin/prah"
+    }
+  },
+  "auto_merge": {
+    "checked": true,
+    "was_armed": false,
+    "disarmed": false,
+    "note": "auto-merge not armed"
+  },
+  "lint": {
+    "ok": true,
+    "output": "receipt complete: kind=artifact lanes=3 author=claude-opus-5-5/claude"
+  }
+}

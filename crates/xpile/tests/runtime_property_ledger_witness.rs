@@ -77,11 +77,11 @@ const C_TRUTH: &str = "crates/xpile/tests/c_truth_witness.rs";
 const LEDGER: &[(&str, Kind)] = &[
     (
         "C-BASHRS-POSIX-IDEMPOTENCE",
-        Kind::Residue {
-            reason: "shell_diff_exec.rs runs each emitted script once and compares stdout to \
-                     python3; idempotence (running it twice equals running it once) is never \
-                     executed, only the re-emit fixed point is checked structurally",
-        },
+        same_file(
+            "crates/xpile/tests/bashrs_idempotence_seam_witness.rs",
+            "every_lean_idempotence_pin_matches_the_shipped_emitter",
+            "check_pin",
+        ),
     ),
     (
         "C-C-FLOAT-ARITH",
