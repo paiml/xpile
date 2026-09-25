@@ -9089,10 +9089,11 @@ roadmap:
   - "Absorbs the capacity freed by the depth-13 Diamond freeze; one contract per PR, same broadening cadence."
   notes: 'Re-derived by PMAT-2159 (2026-09-25): runtime_property_ledger_witness.rs enumerates 8 of 35 contracts with no property-specific Runtime witness, each with its reason; the residue is the remaining work.'
 - id: PMAT-469
-  github_issue: null
+  github_issue: 2161
   item_type: task
   title: 'PMAT-469: [P4] Bashrs check-back option (c) — Lean shell-composition-idempotence theorem'
-  status: planned
+  status: inprogress
+  notes: 'Implemented under PMAT-2161 (#2161). The theorem is over a Lean model, not the meta-HIR Stmt::Cmd; bashrs_idempotence_seam_witness.rs binds it to the shipped emitter with 10 executed pins.'
   priority: medium
   created: 2026-06-11T00:00:00Z
   acceptance_criteria:
@@ -27339,3 +27340,23 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
   labels:
   - kind:code
   notes: 'Epic #2125 (v0.1.620), row 3. Derived: 23 executes, 4 in-process, 8 residue of 35. PMAT-468''s earlier "re-scoped to 4" measured contracts without falsification_tests keys (#1875), a different question.'
+- id: PMAT-2161
+  github_issue: 2161
+  item_type: task
+  title: "bashrs: prove shell-composition idempotence in Lean and bind it to the shipped emitter (PMAT-469)"
+  status: inprogress
+  priority: medium
+  assigned_to: null
+  created: 2026-09-25T00:00:00Z
+  updated: 2026-09-25T00:00:00Z
+  spec: null
+  acceptance_criteria:
+  - Shell.composition_idempotence_diamond proves run c (run c s) = run c s for mkdir -p, touch, chmod, > and VAR=x; the >> and chmod-then-touch duals are proven false
+  - Lean pins are transpiled through the shipped bashrs path, run once and twice, and match the model; an emitter mutant turns a pin red
+  - wired as FALSIFY-BASHRS-POSIX-IDEMP-004; the runtime-property ledger row moves from residue to executes (8 -> 7 of 35)
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'Epic #2125 (v0.1.620), row 4; legacy PMAT-469. Advances C-BASHRS-POSIX-IDEMPOTENCE to diamond depth 14, the exception PMAT-469 names. Lean declarations 489 -> 494.'

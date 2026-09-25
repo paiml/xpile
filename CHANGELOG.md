@@ -13,6 +13,34 @@ not open a replacement, leaving no correct heading to write under; `v0.1.618` do
 contain them. Re-filed and gated by
 `crates/xpile/tests/changelog_release_membership_witness.rs` (PMAT-1496).
 
+### C-BASHRS-POSIX-IDEMPOTENCE gets a theorem about idempotence, checked against the shipped emitter (PMAT-2161)
+
+The contract's Platinum theorem `bashrs_run_is_idempotent_platinum` states
+`f x = f x`, which is true of every function. No theorem said that running a
+command twice is the same as running it once.
+
+`contracts/lean/Bashrs.lean` now has a `Shell` namespace with a filesystem model
+(path to directory or file, each with a mode and contents, plus an environment).
+`composition_idempotence_diamond` proves `run c (run c s) = run c s` for
+`mkdir -p`, `touch`, `chmod`, `>` and `VAR=x`. Two duals are proven so the
+boundary is not vacuous: `>>` is not idempotent, and neither is the sequence
+chmod-then-touch on an absent path.
+
+The theorem is about the model, not about xpile. To connect them,
+`crates/xpile/tests/bashrs_idempotence_seam_witness.rs` reads the 10 pins in the
+Lean file. For each pin it transpiles the script through
+`xpile transpile --target shell`, runs it once and then twice, and checks both
+results against the model's observations. With the emitter changed to print
+each command twice, both append pins went red.
+
+- Wired as `FALSIFY-BASHRS-POSIX-IDEMP-004`. The contract reaches diamond
+  depth 14, the exception PMAT-469 names.
+- The runtime-property ledger moves this contract from residue to executes, so
+  `audit-design.md` now says 7 of 35.
+- Lean declarations go from 489 to 494 (`audit-design.md`, `kaizen-fleet.md`).
+- `sub/bashrs-merger.md` records check-back (3) as partly discharged. The
+  theorem quantifies over a Lean model, not over the meta-HIR `Stmt::Cmd`.
+
 ### 8 of 35 contracts have no property-specific Runtime witness, and a gate now derives that count (PMAT-2159)
 
 PMAT-468 asked which contracts reach quorum on a byte-identity demo fixture

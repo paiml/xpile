@@ -593,6 +593,32 @@ equations:
     postconditions:
       - "Diamond depth-13 broadened: second L1 contract at depth-13"
 
+  composition_idempotence_diamond:
+    # PMAT-469: the idempotence claim this contract is named after, over a
+    # filesystem model. The Platinum `bashrs_run_is_idempotent_platinum`
+    # states `f x = f x`, true of any function; this one states
+    # `run c (run c s) = run c s` for the idempotent subset and is bound to
+    # the shipped emitter by bashrs_idempotence_seam_witness.rs. It is an
+    # allowed exception to the depth-13 freeze: it discharges a falsifier,
+    # it does not broaden.
+    lean_theorem: "XpileContracts.CBashrsPosixIdempotence.Shell.composition_idempotence_diamond"
+    lean_file: "contracts/lean/Bashrs.lean"
+    formula: |
+      For c in {mkdir -p, touch, chmod, > redirect, var-assign} and any state s:
+        run c (run c s) = run c s
+      Dual (proven): the >> append fails it, and so does the sequence
+      chmod-then-touch on an absent path.
+    domain: |
+      A state of path -> {dir mode | file mode content} plus an environment.
+      Timestamps are not modelled.
+    invariants:
+      - "the =false dual append_is_not_idempotent is proven, so the subset boundary is not vacuous"
+      - "10 pins run the emitted script once and twice and match the model's observations"
+    preconditions:
+      - "idem c = true"
+    postconditions:
+      - "run c (run c s) = run c s"
+
 falsification_tests:
   - id: FALSIFY-BASHRS-POSIX-IDEMP-001
     rule: |
@@ -642,3 +668,20 @@ falsification_tests:
     ship_blocking: true
     counter_example_classes:
       - shredded_control_flow_body
+  - id: FALSIFY-BASHRS-POSIX-IDEMP-004
+    rule: |
+      Every Lean idempotence pin in Bashrs.lean agrees with xpile's shipped
+      shell emitter: the emitted command, run once and twice from the pin's
+      setup, leaves the entry the model predicts, and once == twice exactly
+      when the model says the command is idempotent.
+    prediction: |
+      every pin in the `BEGIN shell idempotence pins` block matches.
+    test: |
+      cargo test -p xpile --test bashrs_idempotence_seam_witness
+    if_fails: |
+      The emitter changed what a command does (an emitter that duplicated
+      each command line turned both append pins red), or the model drifted
+      from real POSIX behaviour.
+    ship_blocking: true
+    counter_example_classes:
+      - emitted_command_not_idempotent
