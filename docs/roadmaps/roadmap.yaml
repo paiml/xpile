@@ -9087,6 +9087,7 @@ roadmap:
   - "audit-design.md §4: 10/13 contracts reach QUORUM on a single byte-identity demo-fixture Runtime witness. Replace each with a property-specific differential-execution witness modeled on runtime_strata.rs / trait_runtime_properties.rs (the contracts that already have real Runtime depth)."
   - "Deep-value signal (--lib coverage, 2026-06-11): the live lowering/emit path is thinly unit-covered — depyler lower_expr 16%, lower_for_stmt 0%, parse_type_annotation 0%, rust emit_stmt_indented 17%, ruchy emit_stmt_indented 0%, lean emit_function_with_while_helpers 0%. Add per-branch unit/property tests alongside the runtime witnesses. Caveat: the integration suite in crates/xpile/tests adds coverage not counted by --lib."
   - "Absorbs the capacity freed by the depth-13 Diamond freeze; one contract per PR, same broadening cadence."
+  notes: 'Re-derived by PMAT-2159 (2026-09-25): runtime_property_ledger_witness.rs enumerates 8 of 35 contracts with no property-specific Runtime witness, each with its reason; the residue is the remaining work.'
 - id: PMAT-469
   github_issue: null
   item_type: task
@@ -27318,3 +27319,23 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
   labels:
   - kind:code
   notes: 'Epic #2125 (v0.1.620), row 2. Split at committed pins because no CI job has both lake and cargo: lake build checks model = pin, and lean_shipped_pilot_witness.rs checks pin = shipped.'
+- id: PMAT-2159
+  github_issue: 2159
+  item_type: task
+  title: "proofs: re-derive PMAT-468, enumerate the contracts with no property-specific Runtime witness from the tree"
+  status: inprogress
+  priority: medium
+  assigned_to: null
+  created: 2026-09-25T00:00:00Z
+  updated: 2026-09-25T00:00:00Z
+  spec: null
+  acceptance_criteria:
+  - a witness classifies every contracts/*.yaml id exactly once (executes / in-process / residue with a reason)
+  - every executing row's test calls its probe on a code line and its runner file spawns a process or GPU instance
+  - audit-design.md publishes the residue count derived from the ledger; each check has a RED arm
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'Epic #2125 (v0.1.620), row 3. Derived: 23 executes, 4 in-process, 8 residue of 35. PMAT-468''s earlier "re-scoped to 4" measured contracts without falsification_tests keys (#1875), a different question.'
