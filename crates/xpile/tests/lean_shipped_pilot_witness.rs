@@ -261,6 +261,7 @@ fn shipped_outputs() -> std::collections::BTreeMap<(Op, i64, i64), i64> {
 #[test]
 fn the_pins_cover_the_grid_and_every_op_has_a_dual() {
     let pins = read_pins();
+    assert!(!pins.is_empty(), "{LEAN}: the pin block holds no pins");
     let eqs: BTreeSet<(Op, i64, i64)> = pins
         .iter()
         .filter(|p| !p.dual)
@@ -297,6 +298,7 @@ fn the_pins_cover_the_grid_and_every_op_has_a_dual() {
 #[test]
 fn every_pin_is_the_shipped_output() {
     let pins = read_pins();
+    assert!(!pins.is_empty(), "{LEAN}: the pin block holds no pins");
     let got = shipped_outputs();
     let wrong: Vec<String> = pins
         .iter()
