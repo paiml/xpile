@@ -1,0 +1,306 @@
+{
+  "ticket": "PMAT-2159",
+  "base": "main",
+  "base_resolved": "origin/main",
+  "base_note": "local main differs from origin/main by 4 commit(s); judged against origin/main",
+  "head": "13e2526efb98e130fe69d3a62ce827dcafcc0fbf",
+  "diff_sha256": "cbdb075492df1169344086283a5f11d61e8622d38595350af0531eab19bd560e",
+  "width": 3,
+  "executor": "agy",
+  "prompt_mode": "inline",
+  "prompt_bytes": 28622,
+  "author": {
+    "model": "claude-opus-5-5",
+    "family": "claude",
+    "source": "flag"
+  },
+  "agreed": true,
+  "lanes": [
+    {
+      "lane": 1,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff successfully implements PMAT-2159. \n1. The new witness `runtime_property_ledger_witness.rs` lists exactly 35 contracts, matching the derived IDs from `contracts/*.yaml`, and categorizes them into executes (23), in-process (4), and residue (8) with reasons.\n2. The `check_executes` validation guarantees that each executes row calls its specified probe as a whole identifier on a code line, and that the runner file spawns a process (`Command::new`) or GPU instance (`wgpu::Instance::new`).\n3. `audit-design.md` correctly publishes the derived residue count using the required format, and the `audit_design_publishes_the_derived_residue_count` test ensures it stays synchronized. \n4. The `// ---- RED arms ----` section includes five tests that rigorously verify the validation heuristics (e.g., rejecting commented code, non-test functions, incomplete probes, and stale document counts), satisfying the \"each check has a RED arm\" requirement.",
+      "findings": [],
+      "raw_bytes": 3182,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.1-pro-high",
+      "model_measured": "gemini-3.1-pro-high",
+      "model_source": "measured",
+      "family": "gemini",
+      "role": "independent",
+      "fallback": {
+        "judged_by": "gemini-3.1-pro-high",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gemini-3.1-pro-high",
+            "family": "gemini",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    },
+    {
+      "lane": 2,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff implements all acceptance criteria for PMAT-2159:\n1. `crates/xpile/tests/runtime_property_ledger_witness.rs` introduces `LEDGER` classifying all 35 contract YAML IDs from `contracts/*.yaml` into 23 Executes, 4 InProcess, and 8 Residue rows with detailed reasons (> 20 chars).\n2. The gate verifies that executing witness tests exist, carry the `#[test]` attribute, invoke their probe identifier on active code lines, and reside in files with active process/GPU spawning runners (`Command::new`, `wgpu::Instance::new`).\n3. `docs/specifications/audit-design.md` publishes the derived sentence ('8 of 35 contracts have no property-specific Runtime witness (enumerated by `runtime_property_ledger_witness.rs`)'), replacing the stale '8 of 13' count.\n4. Five distinct RED arms ensure the gate rejects commented probe calls, substring matches, non-test functions, comment-only runners, and count drift.\n5. All roadmap and changelog entries accurately track the re-derivation without weakening any existing gates or adding out-of-scope modifications.",
+      "findings": [
+        {
+          "claim": "LEDGER in runtime_property_ledger_witness.rs classifies all 35 contract IDs declared in contracts/*.yaml (23 Executes, 4 InProcess, 8 Residue with explanation reasons > 20 chars). Measured: derived_contract_ids matches LEDGER exactly with zero missing and zero extra entries.",
+          "file": "crates/xpile/tests/runtime_property_ledger_witness.rs",
+          "fix": "N/A (correct as implemented)",
+          "grounding": "measured",
+          "line": 76
+        },
+        {
+          "claim": "every_executing_witness_reaches_a_process validates that all 23 executing rows name an existing #[test] fn calling its execution probe as a whole identifier on an active code line, and that the runner file executes a process or wgpu instance on an active code line. Measured: all 23 Executes rows and 4 InProcess rows verified against repository sources.",
+          "file": "crates/xpile/tests/runtime_property_ledger_witness.rs",
+          "fix": "N/A (correct as implemented)",
+          "grounding": "measured",
+          "line": 441
+        },
+        {
+          "claim": "audit-design.md publishes the residue count sentence derived from the ledger: '8 of 35 contracts have no property-specific Runtime witness (enumerated by `runtime_property_ledger_witness.rs`)'. Measured: text verified to match published_sentence(residue_count(), total) exactly.",
+          "file": "docs/specifications/audit-design.md",
+          "fix": "N/A (correct as implemented)",
+          "grounding": "cited",
+          "line": 183
+        },
+        {
+          "claim": "runtime_property_ledger_witness.rs contains five dedicated RED arm tests proving refusal on commented probe calls, substring probe matches, non-#[test] functions, comment-only process spawns, and published count drift.",
+          "file": "crates/xpile/tests/runtime_property_ledger_witness.rs",
+          "fix": "N/A (correct as implemented)",
+          "grounding": "cited",
+          "line": 512
+        },
+        {
+          "claim": "PMAT-2159 is registered in docs/roadmaps/roadmap.yaml under Epic #2125 with acceptance criteria matching the implemented checks, and PMAT-468 notes are updated with the re-derived residue count.",
+          "file": "docs/roadmaps/roadmap.yaml",
+          "fix": "N/A (correct as implemented)",
+          "grounding": "cited",
+          "line": 27322
+        }
+      ],
+      "raw_bytes": 7512,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.8-flash-high",
+      "model_measured": "gemini-3.8-flash-high",
+      "model_source": "measured",
+      "family": "gemini",
+      "role": "independent",
+      "fallback": {
+        "judged_by": "gemini-3.8-flash-high",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gemini-3.8-flash-high",
+            "family": "gemini",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    },
+    {
+      "lane": 3,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff fulfills all acceptance criteria for PMAT-2159: it implements runtime_property_ledger_witness.rs classifying all 35 contracts from contracts/*.yaml into 23 executing tests, 4 in-process trait tests, and 8 documented residue contracts; verifies each executing test calls its execution probe and spawns a process/GPU instance; includes red arms to catch invalid shapes; and updates audit-design.md, CHANGELOG.md, and roadmap.yaml with the derived count. No refutations found.",
+      "findings": [
+        {
+          "claim": "The ledger classifies all 35 contracts derived from contracts/*.yaml into 23 Executes, 4 InProcess, and 8 Residue rows with documented reasons.",
+          "file": "crates/xpile/tests/runtime_property_ledger_witness.rs",
+          "grounding": "measured",
+          "line": 77
+        },
+        {
+          "claim": "Every executing witness row names a #[test] that calls its execution probe on a code line, and its runner file spawns a process or GPU instance.",
+          "file": "crates/xpile/tests/runtime_property_ledger_witness.rs",
+          "grounding": "measured",
+          "line": 436
+        },
+        {
+          "claim": "audit-design.md publishes the exact derived sentence '8 of 35 contracts have no property-specific Runtime witness (enumerated by `runtime_property_ledger_witness.rs`)'.",
+          "file": "docs/specifications/audit-design.md",
+          "grounding": "cited",
+          "line": 183
+        }
+      ],
+      "raw_bytes": 3806,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.7-flash-high",
+      "model_measured": "gemini-3.7-flash-high",
+      "model_source": "measured",
+      "family": "gemini",
+      "role": "independent",
+      "fallback": {
+        "judged_by": "gemini-3.7-flash-high",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gemini-3.7-flash-high",
+            "family": "gemini",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    }
+  ],
+  "dissent": [],
+  "dedup": [
+    {
+      "file": "crates/xpile/tests/runtime_property_ledger_witness.rs",
+      "line": 76,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "LEDGER in runtime_property_ledger_witness.rs classifies all 35 contract IDs declared in contracts/*.yaml (23 Executes, 4 InProcess, 8 Residue with explanation reasons > 20 chars). Measured: derived_contract_ids matches LEDGER exactly with zero missing and zero extra entries."
+      ]
+    },
+    {
+      "file": "crates/xpile/tests/runtime_property_ledger_witness.rs",
+      "line": 77,
+      "lanes_agreeing": [
+        3
+      ],
+      "claims": [
+        "The ledger classifies all 35 contracts derived from contracts/*.yaml into 23 Executes, 4 InProcess, and 8 Residue rows with documented reasons."
+      ]
+    },
+    {
+      "file": "crates/xpile/tests/runtime_property_ledger_witness.rs",
+      "line": 436,
+      "lanes_agreeing": [
+        3
+      ],
+      "claims": [
+        "Every executing witness row names a #[test] that calls its execution probe on a code line, and its runner file spawns a process or GPU instance."
+      ]
+    },
+    {
+      "file": "crates/xpile/tests/runtime_property_ledger_witness.rs",
+      "line": 441,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "every_executing_witness_reaches_a_process validates that all 23 executing rows name an existing #[test] fn calling its execution probe as a whole identifier on an active code line, and that the runner file executes a process or wgpu instance on an active code line. Measured: all 23 Executes rows and 4 InProcess rows verified against repository sources."
+      ]
+    },
+    {
+      "file": "crates/xpile/tests/runtime_property_ledger_witness.rs",
+      "line": 512,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "runtime_property_ledger_witness.rs contains five dedicated RED arm tests proving refusal on commented probe calls, substring probe matches, non-#[test] functions, comment-only process spawns, and published count drift."
+      ]
+    },
+    {
+      "file": "docs/roadmaps/roadmap.yaml",
+      "line": 27322,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "PMAT-2159 is registered in docs/roadmaps/roadmap.yaml under Epic #2125 with acceptance criteria matching the implemented checks, and PMAT-468 notes are updated with the re-derived residue count."
+      ]
+    },
+    {
+      "file": "docs/specifications/audit-design.md",
+      "line": 183,
+      "lanes_agreeing": [
+        2,
+        3
+      ],
+      "claims": [
+        "audit-design.md publishes the exact derived sentence '8 of 35 contracts have no property-specific Runtime witness (enumerated by `runtime_property_ledger_witness.rs`)'.",
+        "audit-design.md publishes the residue count sentence derived from the ledger: '8 of 35 contracts have no property-specific Runtime witness (enumerated by `runtime_property_ledger_witness.rs`)'. Measured: text verified to match published_sentence(residue_count(), total) exactly."
+      ]
+    }
+  ],
+  "uncovered": [],
+  "coverage_source": "lanes",
+  "partial": false,
+  "partial_reasons": [],
+  "fallback": {
+    "same_family_width": 1,
+    "chain": [
+      {
+        "model": "gemini-3.1-pro-high",
+        "family": "gemini",
+        "disposition": "configured"
+      },
+      {
+        "model": "gemini-3.8-flash-high",
+        "family": "gemini",
+        "disposition": "configured"
+      },
+      {
+        "model": "gemini-3.7-flash-high",
+        "family": "gemini",
+        "disposition": "configured"
+      },
+      {
+        "model": "gpt-oss-120b-medium",
+        "family": "openai",
+        "disposition": "fallback"
+      },
+      {
+        "model": "qwen3.5",
+        "family": "qwen",
+        "disposition": "not-run",
+        "why": "no quorum.local_lane in the config — the aprender lane has no model to load"
+      },
+      {
+        "model": "claude-opus-4-6-thinking",
+        "family": "claude",
+        "disposition": "width",
+        "why": "same family as the author: at most 1 lane, recorded role width, counted toward no floor (R-15a)"
+      },
+      {
+        "model": "claude-sonnet-4-6",
+        "family": "claude",
+        "disposition": "width",
+        "why": "same family as the author: at most 1 lane, recorded role width, counted toward no floor (R-15a)"
+      }
+    ],
+    "precheck": [
+      {
+        "family": "gemini",
+        "model": "gemini-3.1-pro-high",
+        "probe": 1,
+        "outcome": "live"
+      }
+    ],
+    "prah": {
+      "source": "install-receipt",
+      "path": "/home/noah/.claude/skills/paiml-implement/bin/prah"
+    }
+  },
+  "auto_merge": {
+    "checked": true,
+    "was_armed": false,
+    "disarmed": false,
+    "note": "auto-merge not armed"
+  },
+  "lint": {
+    "ok": true,
+    "output": "receipt complete: kind=artifact lanes=3 author=claude-opus-5-5/claude"
+  }
+}
