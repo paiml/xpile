@@ -1,0 +1,103 @@
+{
+  "ticket": "PMAT-2163",
+  "pr": 2164,
+  "base": "main",
+  "head": "bfe9be418528abfd2e1ba614dae558e8ba147307",
+  "diff_sha256": "42754bdc43042c254a94ecdc3a7b62a71c0e7f54950f8ccadfb3ed57232f1b17",
+  "brief_sha256": null,
+  "agreed": true,
+  "degraded": "same-family",
+  "degraded_basis": "agy 429 on every gemini lane and fallback step at this head (round 3 NO-VERDICT, kept outside the repo); Claude Code lanes sonnet + haiku + sonnet, run sequentially on the round's own brief, per the operator's fallback rule; author is Opus, no lane uses the author's model.",
+  "author": {
+    "model": "claude-opus-5-5",
+    "family": "claude"
+  },
+  "executor": "claude-sequential",
+  "lanes": [
+    {
+      "lane": 1,
+      "model": "claude-sonnet-5",
+      "family": "claude",
+      "verdict": "PASS",
+      "summary": "Diff implements all four PMAT-2163 acceptance criteria: pilot opt-in via metadata.quorum_semantic, shipped_binding-only Semantic counting for pilot contracts (verified counts 42->3, 18->1 via grep), a derivation-witness test with RED arms, and a doc-sync gate. No weakened gates, inverted tests, or out-of-scope changes found.",
+      "findings": [
+        {
+          "file": "crates/xpile/src/main.rs",
+          "line": 3342,
+          "claim": "is_shipped_bound_pilot scopes its scan to the metadata: block and correctly excludes commented-out or out-of-block quorum_semantic lines",
+          "grounding": "cited"
+        },
+        {
+          "file": "contracts/py-int-arith-v1.yaml",
+          "line": 4,
+          "claim": "lean_theorem: count is 42, shipped_binding: count is 3, matching CHANGELOG/cli.md table",
+          "grounding": "measured"
+        },
+        {
+          "file": "contracts/bashrs-posix-idempotence-v1.yaml",
+          "line": 4,
+          "claim": "lean_theorem: count is 18, shipped_binding: count is 1, matching CHANGELOG/cli.md table",
+          "grounding": "measured"
+        },
+        {
+          "file": "crates/xpile/src/main.rs",
+          "line": 3637,
+          "claim": "the pilot disclosure line is printed last in print_quorum_text, after the totals and rule lines",
+          "grounding": "cited"
+        }
+      ]
+    },
+    {
+      "lane": 2,
+      "model": "claude-haiku-4-5",
+      "family": "claude",
+      "verdict": "PASS",
+      "summary": "Diff correctly implements PMAT-2163: pilot contracts C-PY-INT-ARITH and C-BASHRS-POSIX-IDEMPOTENCE opt in with quorum_semantic: shipped-bound marker, Semantic votes count only shipped_binding refs (3 and 1 respectively, down from 42 and 18), witness test derives and verifies binding sets against Lean pins bidirectionally, binary reports semantic_rule field and names pilot contracts, and doc-sync gate enforces live documentation against binary output. All four acceptance criteria met with comprehensive RED/GREEN test coverage. Receipt shows 3/3 lanes PASS.",
+      "findings": [
+        {
+          "file": "crates/xpile/src/main.rs",
+          "line": 3281,
+          "claim": "is_shipped_bound_pilot() detects quorum_semantic: shipped-bound in metadata; quorum() counts shipped_binding: instead of lean_theorem: for pilot contracts",
+          "grounding": "cited"
+        },
+        {
+          "file": "crates/xpile/tests/quorum_semantic_pilot_witness.rs",
+          "line": 218,
+          "claim": "check_pilot() derives bound theorems from Lean pin block's transitive closure, asserts bijection with YAML shipped_binding set, verifies each binding names a test that reads the pin-block header",
+          "grounding": "cited"
+        },
+        {
+          "file": "crates/xpile/tests/quorum_semantic_pilot_witness.rs",
+          "line": 401,
+          "claim": "red_stripping_the_marker_restores_the_old_reimplementation_count() strips marker and confirms C-PY-INT-ARITH 42\u21923, only pilot rows change",
+          "grounding": "cited"
+        },
+        {
+          "file": "crates/xpile/src/main.rs",
+          "line": 3637,
+          "claim": "text report discloses pilot with 'Semantic, pilot (PMAT-2163): [ids]'; JSON adds semantic_rule field ('shipped-bound' or 'every-lean-theorem')",
+          "grounding": "cited"
+        },
+        {
+          "file": "crates/xpile/tests/quorum_semantic_pilot_witness.rs",
+          "line": 589,
+          "claim": "doc-sync gate every_quorum_count_a_live_doc_quotes_is_what_the_binary_prints() parses live .md for rows/totals/pilot-table, verifies against binary; red_a_doc_quote_the_binary_no_longer_prints_is_refused() rejects stale counts",
+          "grounding": "cited"
+        }
+      ]
+    },
+    {
+      "lane": 3,
+      "model": "claude-sonnet-5",
+      "family": "claude",
+      "verdict": "PASS",
+      "summary": "Implements PMAT-2163 as specified: quorum_semantic: shipped-bound opt-in on exactly the two pilot contracts, Semantic stratum counts shipped_binding: only for those, all other 33 contracts unaffected. Verified by hand: lean_theorem counts (42, 18) and shipped_binding counts (3, 1) match the CHANGELOG/cli.md tables exactly; the Lean pin-block closure correctly includes i64_floor_div/i64_mod/i64_shr (bound) and correctly excludes division_algorithm_diamond (unbound, as the refusal test claims); both cited shipped_binding test files reference the exact pin-block BEGIN markers; shipped_binding: lines immediately follow their lean_theorem: line as the parser requires. No other contract carries the new marker, and the change is scoped to the quorum command only.",
+      "findings": []
+    }
+  ],
+  "previous_round": {
+    "head": "bfe9be418528abfd2e1ba614dae558e8ba147307",
+    "diff_sha256": "42754bdc43042c254a94ecdc3a7b62a71c0e7f54950f8ccadfb3ed57232f1b17",
+    "note": "round 2 at this head: 3 gemini PASS, lane 1 coerced from an unfinished intermediate step (PMAT-082); not armed on"
+  }
+}

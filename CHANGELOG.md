@@ -13,6 +13,45 @@ not open a replacement, leaving no correct heading to write under; `v0.1.618` do
 contain them. Re-filed and gated by
 `crates/xpile/tests/changelog_release_membership_witness.rs` (PMAT-1496).
 
+### `xpile quorum` counts Semantic votes only for theorems bound to shipped code, on two pilot contracts (PMAT-2163)
+
+`xpile quorum` counted every `lean_theorem:` ref in a contract as a Semantic
+vote. Most of those theorems are about a Lean re-implementation of the
+construct, so no edit to xpile could turn one red (PMAT-1512).
+
+A contract can now opt in with `quorum_semantic: shipped-bound` in its
+`metadata:`. Its Semantic stratum then counts only obligations that carry a
+`shipped_binding:`, which names the test that runs xpile's shipped output
+against the pins in the Lean file. The pilot is two contracts:
+
+| contract | Semantic before | after |
+|---|---|---|
+| `C-PY-INT-ARITH` | 42 | 3 |
+| `C-BASHRS-POSIX-IDEMPOTENCE` | 18 | 1 |
+
+Both stay at QUORUM, and the totals stay at 26 QUORUM, 9 PARTIAL. The other 33
+contracts keep the old rule. The report's last line names the pilot and says so,
+and `--json` has a `semantic_rule` field on every row.
+
+`crates/xpile/tests/quorum_semantic_pilot_witness.rs` holds the new field to the
+Lean source. It takes the defs the pin block reaches, closes them over the
+in-file defs they call, and marks a theorem as bound if its statement names one.
+The YAML must match that set in both directions. Bound means the theorem is
+about a function whose values are checked against the shipped binary on the
+pinned inputs, not that the theorem itself was checked.
+
+The same file:
+
+- shows the old count coming back when the marker is stripped;
+- refuses a binding on `division_algorithm_diamond`, a dropped binding, and a
+  binding to a test that does not read the pins;
+- fails when a live doc quotes a quorum row, a totals line, or a row of the new
+  pilot table in `book/src/reference/cli.md` that the binary no longer prints.
+  Dated snapshots and the CHANGELOG are history and are skipped.
+
+Mutants: with the binary back on the old rule, 4 of the 7 tests went red. A
+wrong number in the `cli.md` table turned the doc test red.
+
 ### C-BASHRS-POSIX-IDEMPOTENCE gets a theorem about idempotence, checked against the shipped emitter (PMAT-2161)
 
 The contract's Platinum theorem `bashrs_run_is_idempotent_platinum` states

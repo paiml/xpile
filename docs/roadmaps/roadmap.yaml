@@ -27360,3 +27360,24 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
   labels:
   - kind:code
   notes: 'Epic #2125 (v0.1.620), row 4; legacy PMAT-469. Advances C-BASHRS-POSIX-IDEMPOTENCE to diamond depth 14, the exception PMAT-469 names. Lean declarations 489 -> 494.'
+- id: PMAT-2163
+  github_issue: 2163
+  item_type: task
+  title: "quorum: count a Semantic vote only for Lean theorems bound to shipped code, pilot contracts only"
+  status: inprogress
+  priority: medium
+  assigned_to: null
+  created: 2026-09-25T00:00:00Z
+  updated: 2026-09-25T00:00:00Z
+  spec: null
+  acceptance_criteria:
+  - a contract with metadata quorum_semantic shipped-bound counts only obligations with a shipped_binding as Semantic votes
+  - the shipped_binding set is derived from the Lean pin block, both ways, and each binding names a test that reads the block
+  - a RED arm shows the old count (C-PY-INT-ARITH 42 -> 3); the report and JSON disclose the rule; other contracts are unchanged
+  - a doc-sync gate reds when a live doc quotes a quorum row, totals line or pilot-table row the binary no longer prints
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'Epic #2125 (v0.1.620), row 5. Pilot: C-PY-INT-ARITH (Sem 42 -> 3) and C-BASHRS-POSIX-IDEMPOTENCE (18 -> 1); statuses unchanged, 26 QUORUM / 9 PARTIAL.'

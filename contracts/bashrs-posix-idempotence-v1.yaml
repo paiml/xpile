@@ -1,5 +1,7 @@
 metadata:
   id: C-BASHRS-POSIX-IDEMPOTENCE
+  # PMAT-2163: Semantic counts only obligations with a shipped_binding.
+  quorum_semantic: shipped-bound
   version: "0.1.0"
   created: "2026-05-17"
   author: PAIML Engineering
@@ -602,6 +604,7 @@ equations:
     # allowed exception to the depth-13 freeze: it discharges a falsifier,
     # it does not broaden.
     lean_theorem: "XpileContracts.CBashrsPosixIdempotence.Shell.composition_idempotence_diamond"
+    shipped_binding: "crates/xpile/tests/bashrs_idempotence_seam_witness.rs"
     lean_file: "contracts/lean/Bashrs.lean"
     formula: |
       For c in {mkdir -p, touch, chmod, > redirect, var-assign} and any state s:
