@@ -13,6 +13,38 @@ not open a replacement, leaving no correct heading to write under; `v0.1.618` do
 contain them. Re-filed and gated by
 `crates/xpile/tests/changelog_release_membership_witness.rs` (PMAT-1496).
 
+### A Lean model is checked against xpile's shipped Rust for the first time (PMAT-2157)
+
+`contracts/lean/PyIntArith.lean` models Python `//`, `%` and `>>` on i64 as
+`Int.fdiv`, `Int.fmod` and `Int.fdiv a (2 ^ n)`. Its refinement theorems are
+`rfl` between two Lean defs with the same body, so no edit to
+`xpile-rust-codegen` could turn one red. This is the first pilot on epic #2125
+row 2.
+
+- **Model = pin (Lean):** the module now ends with 84 pins, one per grid point
+  (`example : i64_floor_div (-7) (2) = (-4) := by decide`), covering 6 dividends
+  including `i64::MIN`/`i64::MAX`, 5 divisors and 4 shift amounts. It also has
+  19 `=false` duals (`example : Int.tdiv (-7) (2) ≠ (-4) := by decide`) on the
+  points where truncation differs. The duals show that the pins tell floor
+  semantics from Rust's `/` and `%`. `lake build` checks both.
+- **Pin = shipped (cargo):** `crates/xpile/tests/lean_shipped_pilot_witness.rs`
+  parses the pins from the Lean file. It asserts they cover the grid exactly,
+  with at least one dual per op. It then transpiles a Python `//`/`%`/`>>`
+  module through the shipped `xpile transpile --target rust`, compiles and runs
+  it, and requires every pin to equal the shipped output. No CI job has both
+  `lake` and `cargo`, so the chain is split at the pins.
+
+Executed:
+- Removing `emit_floor_div`'s floor correction turns the witness RED
+  (`floor_div(-7, 2) pinned -4, shipped -3`, and more).
+- Changing the model's `i64_floor_div` to `Int.tdiv` turns `lake build PyIntArith`
+  RED on 7 pins.
+- Both restored go green.
+
+Coverage, recorded rather than promised: 18 of the 35 core Lean modules carry a
+`Code lane:` line. One of them, PyIntArith, is now checked against shipped
+output, for `//`, `%` and `>>` only.
+
 ### The FFI ABI-slot proof covers all 20 meta-HIR types, not 13 (PMAT-2154)
 
 `contracts/kani/real_ffi_abi_slot.rs` claimed to enumerate "all 13" variants of

@@ -3169,4 +3169,126 @@ theorem int_nat_cast_order_embedding_diamond (n m : Nat) :
   · omega
   · exact Int.ofNat_nonneg n
 
+/-!
+  ## Shipped pins (PMAT-2157, epic #2125 row 2)
+
+  The theorems above relate two Lean defs to each other. These examples relate
+  the model to xpile's SHIPPED Rust. Every pinned value is the output of
+  `xpile transpile --target rust` on a Python `//`, `%` or `>>`, compiled with
+  `rustc` and run. `crates/xpile/tests/lean_shipped_pilot_witness.rs` checks
+  pin = shipped. `lake build` checks model = pin, so an edit to either side
+  breaks one of the two. The witness parses this block, so keep one pin per
+  line in this exact form.
+-/
+-- BEGIN shipped pins (PMAT-2157)
+-- `//`: i64_floor_div a b, pinned to xpile's shipped Rust output.
+example : i64_floor_div (-7) (2) = (-4) := by decide
+example : i64_floor_div (-7) (-2) = (3) := by decide
+example : i64_floor_div (-7) (3) = (-3) := by decide
+example : i64_floor_div (-7) (-3) = (2) := by decide
+example : i64_floor_div (-7) (1) = (-7) := by decide
+example : i64_floor_div (7) (2) = (3) := by decide
+example : i64_floor_div (7) (-2) = (-4) := by decide
+example : i64_floor_div (7) (3) = (2) := by decide
+example : i64_floor_div (7) (-3) = (-3) := by decide
+example : i64_floor_div (7) (1) = (7) := by decide
+example : i64_floor_div (-6) (2) = (-3) := by decide
+example : i64_floor_div (-6) (-2) = (3) := by decide
+example : i64_floor_div (-6) (3) = (-2) := by decide
+example : i64_floor_div (-6) (-3) = (2) := by decide
+example : i64_floor_div (-6) (1) = (-6) := by decide
+example : i64_floor_div (0) (2) = (0) := by decide
+example : i64_floor_div (0) (-2) = (0) := by decide
+example : i64_floor_div (0) (3) = (0) := by decide
+example : i64_floor_div (0) (-3) = (0) := by decide
+example : i64_floor_div (0) (1) = (0) := by decide
+example : i64_floor_div (9223372036854775807) (2) = (4611686018427387903) := by decide
+example : i64_floor_div (9223372036854775807) (-2) = (-4611686018427387904) := by decide
+example : i64_floor_div (9223372036854775807) (3) = (3074457345618258602) := by decide
+example : i64_floor_div (9223372036854775807) (-3) = (-3074457345618258603) := by decide
+example : i64_floor_div (9223372036854775807) (1) = (9223372036854775807) := by decide
+example : i64_floor_div (-9223372036854775808) (2) = (-4611686018427387904) := by decide
+example : i64_floor_div (-9223372036854775808) (-2) = (4611686018427387904) := by decide
+example : i64_floor_div (-9223372036854775808) (3) = (-3074457345618258603) := by decide
+example : i64_floor_div (-9223372036854775808) (-3) = (3074457345618258602) := by decide
+example : i64_floor_div (-9223372036854775808) (1) = (-9223372036854775808) := by decide
+-- `%`: i64_mod a b.
+example : i64_mod (-7) (2) = (1) := by decide
+example : i64_mod (-7) (-2) = (-1) := by decide
+example : i64_mod (-7) (3) = (2) := by decide
+example : i64_mod (-7) (-3) = (-1) := by decide
+example : i64_mod (-7) (1) = (0) := by decide
+example : i64_mod (7) (2) = (1) := by decide
+example : i64_mod (7) (-2) = (-1) := by decide
+example : i64_mod (7) (3) = (1) := by decide
+example : i64_mod (7) (-3) = (-2) := by decide
+example : i64_mod (7) (1) = (0) := by decide
+example : i64_mod (-6) (2) = (0) := by decide
+example : i64_mod (-6) (-2) = (0) := by decide
+example : i64_mod (-6) (3) = (0) := by decide
+example : i64_mod (-6) (-3) = (0) := by decide
+example : i64_mod (-6) (1) = (0) := by decide
+example : i64_mod (0) (2) = (0) := by decide
+example : i64_mod (0) (-2) = (0) := by decide
+example : i64_mod (0) (3) = (0) := by decide
+example : i64_mod (0) (-3) = (0) := by decide
+example : i64_mod (0) (1) = (0) := by decide
+example : i64_mod (9223372036854775807) (2) = (1) := by decide
+example : i64_mod (9223372036854775807) (-2) = (-1) := by decide
+example : i64_mod (9223372036854775807) (3) = (1) := by decide
+example : i64_mod (9223372036854775807) (-3) = (-2) := by decide
+example : i64_mod (9223372036854775807) (1) = (0) := by decide
+example : i64_mod (-9223372036854775808) (2) = (0) := by decide
+example : i64_mod (-9223372036854775808) (-2) = (0) := by decide
+example : i64_mod (-9223372036854775808) (3) = (1) := by decide
+example : i64_mod (-9223372036854775808) (-3) = (-2) := by decide
+example : i64_mod (-9223372036854775808) (1) = (0) := by decide
+-- `>>`: i64_shr a n.
+example : i64_shr (-7) (0) = (-7) := by decide
+example : i64_shr (-7) (1) = (-4) := by decide
+example : i64_shr (-7) (3) = (-1) := by decide
+example : i64_shr (-7) (63) = (-1) := by decide
+example : i64_shr (7) (0) = (7) := by decide
+example : i64_shr (7) (1) = (3) := by decide
+example : i64_shr (7) (3) = (0) := by decide
+example : i64_shr (7) (63) = (0) := by decide
+example : i64_shr (-6) (0) = (-6) := by decide
+example : i64_shr (-6) (1) = (-3) := by decide
+example : i64_shr (-6) (3) = (-1) := by decide
+example : i64_shr (-6) (63) = (-1) := by decide
+example : i64_shr (0) (0) = (0) := by decide
+example : i64_shr (0) (1) = (0) := by decide
+example : i64_shr (0) (3) = (0) := by decide
+example : i64_shr (0) (63) = (0) := by decide
+example : i64_shr (9223372036854775807) (0) = (9223372036854775807) := by decide
+example : i64_shr (9223372036854775807) (1) = (4611686018427387903) := by decide
+example : i64_shr (9223372036854775807) (3) = (1152921504606846975) := by decide
+example : i64_shr (9223372036854775807) (63) = (0) := by decide
+example : i64_shr (-9223372036854775808) (0) = (-9223372036854775808) := by decide
+example : i64_shr (-9223372036854775808) (1) = (-4611686018427387904) := by decide
+example : i64_shr (-9223372036854775808) (3) = (-1152921504606846976) := by decide
+example : i64_shr (-9223372036854775808) (63) = (-1) := by decide
+-- `=false` duals: truncation gives a different value on these points, so
+-- the pins above tell floor semantics from Rust's truncating `/`, `%`.
+example : Int.tdiv (-7) (2) ≠ (-4) := by decide
+example : Int.tdiv (-7) (3) ≠ (-3) := by decide
+example : Int.tdiv (7) (-2) ≠ (-4) := by decide
+example : Int.tdiv (7) (-3) ≠ (-3) := by decide
+example : Int.tdiv (9223372036854775807) (-2) ≠ (-4611686018427387904) := by decide
+example : Int.tdiv (9223372036854775807) (-3) ≠ (-3074457345618258603) := by decide
+example : Int.tdiv (-9223372036854775808) (3) ≠ (-3074457345618258603) := by decide
+example : Int.tmod (-7) (2) ≠ (1) := by decide
+example : Int.tmod (-7) (3) ≠ (2) := by decide
+example : Int.tmod (7) (-2) ≠ (-1) := by decide
+example : Int.tmod (7) (-3) ≠ (-2) := by decide
+example : Int.tmod (9223372036854775807) (-2) ≠ (-1) := by decide
+example : Int.tmod (9223372036854775807) (-3) ≠ (-2) := by decide
+example : Int.tmod (-9223372036854775808) (3) ≠ (1) := by decide
+example : Int.tdiv (-7) (2 ^ 1) ≠ (-4) := by decide
+example : Int.tdiv (-7) (2 ^ 3) ≠ (-1) := by decide
+example : Int.tdiv (-7) (2 ^ 63) ≠ (-1) := by decide
+example : Int.tdiv (-6) (2 ^ 3) ≠ (-1) := by decide
+example : Int.tdiv (-6) (2 ^ 63) ≠ (-1) := by decide
+-- END shipped pins (PMAT-2157)
+
 end XpileContracts.CPyIntArith
