@@ -50,6 +50,17 @@ The local pre-commit hook had been refusing any commit to the two codegen
 cyclomatic 165). It was regenerated with `pmat hooks refresh`, which judges only
 the functions a commit touches and refuses only growth.
 
+### A `bool` argument into a C `long long` and a C `float` boundary is pinned by an executing fixture (PMAT-2150)
+
+PMAT-2145 covered a bool argument into all four scalar slots, but `hybrid_bool_arg`
+executes only the `int` and `double` ones. `long long` and `float` were covered only
+by `scalar_adapter` unit tests, and neither of those passes a bool. `hybrid_long` now
+ends with `triple(True)` and `triple(False)`, and `hybrid_float32` with `twice(True)`
+and `twice(False)`. Both MATCH CPython byte-for-byte under plain `--verify`: `3 0`
+and `2.0 0.0`, measured from ctypes' `c_longlong` and `c_float`. No code changed.
+The red half was the new expectations in `hybrid_scalar_widths.rs`, run before the
+fixture lines existed; both MATCH assertions failed.
+
 ### A Python `bool` or `int` argument into a C `int`, `long long`, `float` or `double` boundary builds and matches CPython (PMAT-2145)
 
 The Python frontend lowers a boundary call before the C side is known, so
