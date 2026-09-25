@@ -1,0 +1,321 @@
+{
+  "ticket": "PMAT-2150",
+  "base": "main",
+  "base_resolved": "origin/main",
+  "base_note": "local main differs from origin/main by 1 commit(s); judged against origin/main",
+  "head": "a422d462cee0eba3f5f20158b90084cc02423031",
+  "diff_sha256": "7e086fbdc7cc3752bd0e28806c203224ff325a0f2c830f47e635fd0546a31f2a",
+  "width": 3,
+  "executor": "agy",
+  "prompt_mode": "inline",
+  "prompt_bytes": 7621,
+  "author": {
+    "model": "claude-opus-5-5",
+    "family": "claude",
+    "source": "flag"
+  },
+  "agreed": true,
+  "lanes": [
+    {
+      "lane": 1,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff implements exactly what the ticket PMAT-2150 asks for: adding bool argument fixtures to long long and float boundaries. The fixtures `hybrid_long` and `hybrid_float32` were updated to pass `True` and `False`, and their respective MATCH checks were updated in `hybrid_scalar_widths.rs` to reflect the ctypes-consistent expected output. No violations were found.",
+      "findings": [
+        {
+          "claim": "The executing fixture hybrid_long passes True into a long long slot",
+          "file": "crates/xpile/tests/fixtures/hybrid_long/app.py",
+          "fix": "",
+          "grounding": "cited",
+          "line": 13
+        },
+        {
+          "claim": "The executing fixture hybrid_float32 passes True into a float slot",
+          "file": "crates/xpile/tests/fixtures/hybrid_float32/app.py",
+          "fix": "",
+          "grounding": "cited",
+          "line": 23
+        },
+        {
+          "claim": "The hybrid_scalar_widths.rs test updates expected MATCH output to include the bool conversion result 3\\n0 for long long",
+          "file": "crates/xpile/tests/hybrid_scalar_widths.rs",
+          "fix": "",
+          "grounding": "cited",
+          "line": 128
+        },
+        {
+          "claim": "The hybrid_scalar_widths.rs test updates expected MATCH output to include the bool conversion result 2.0\\n0.0 for float",
+          "file": "crates/xpile/tests/hybrid_scalar_widths.rs",
+          "fix": "",
+          "grounding": "cited",
+          "line": 69
+        }
+      ],
+      "raw_bytes": 4675,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.1-pro-high",
+      "model_measured": "gemini-3.1-pro-high",
+      "model_source": "measured",
+      "family": "gemini",
+      "role": "independent",
+      "fallback": {
+        "judged_by": "gemini-3.1-pro-high",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gemini-3.1-pro-high",
+            "family": "gemini",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    },
+    {
+      "lane": 2,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff satisfies ticket PMAT-2150 and adheres to its specified scope. Executing fixtures hybrid_float32 and hybrid_long were extended to pass True and False into C float and C long long parameter boundaries, and their integration tests in hybrid_scalar_widths.rs were updated to pin byte-for-byte MATCH against CPython ctypes behavior (2.0 and 0.0 for c_float; 3 and 0 for c_longlong). No production code was changed, no gates were weakened, and no out-of-scope modifications were introduced.",
+      "findings": [],
+      "raw_bytes": 2261,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.8-flash-high",
+      "model_measured": "gemini-3.8-flash-high",
+      "model_source": "measured",
+      "family": "gemini",
+      "role": "independent",
+      "fallback": {
+        "judged_by": "gemini-3.8-flash-high",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gemini-3.8-flash-high",
+            "family": "gemini",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    },
+    {
+      "lane": 3,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff for PMAT-2150 accurately and strictly implements the ticket acceptance criteria. It extends the executing fixtures `hybrid_float32` and `hybrid_long` to pass `True` and `False` across C `float` and `long long` boundaries and strengthens the integration assertions in `hybrid_scalar_widths.rs` to verify exact byte-identical match with CPython (2.0/0.0 and 3/0). No production code or gates were weakened or modified outside the scope of the ticket.",
+      "findings": [
+        {
+          "claim": "hybrid_float32/app.py adds executing test cases twice(True) and twice(False) converting bool to float (1.0 -> 2.0 and 0.0 -> 0.0)",
+          "file": "crates/xpile/tests/fixtures/hybrid_float32/app.py",
+          "grounding": "cited",
+          "line": 23
+        },
+        {
+          "claim": "hybrid_long/app.py adds executing test cases triple(True) and triple(False) converting bool to long long (1 -> 3 and 0 -> 0)",
+          "file": "crates/xpile/tests/fixtures/hybrid_long/app.py",
+          "grounding": "cited",
+          "line": 14
+        },
+        {
+          "claim": "hybrid_scalar_widths.rs strengthens float_boundary_matches_cpython_without_repair assertion to 6 lines including \\n2.0\\n0.0",
+          "file": "crates/xpile/tests/hybrid_scalar_widths.rs",
+          "grounding": "cited",
+          "line": 69
+        },
+        {
+          "claim": "hybrid_scalar_widths.rs strengthens long_long_boundary_is_compared_not_skipped assertion to 4 lines including \\n3\\n0",
+          "file": "crates/xpile/tests/hybrid_scalar_widths.rs",
+          "grounding": "cited",
+          "line": 128
+        },
+        {
+          "claim": "roadmap.yaml registers PMAT-2150 with acceptance criteria matching issue scope",
+          "file": "docs/roadmaps/roadmap.yaml",
+          "grounding": "cited",
+          "line": 27264
+        },
+        {
+          "claim": "CHANGELOG.md records the addition of the executing fixtures under PMAT-2150 without production code changes",
+          "file": "CHANGELOG.md",
+          "grounding": "cited",
+          "line": 53
+        }
+      ],
+      "raw_bytes": 4777,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.7-flash-high",
+      "model_measured": "gemini-3.7-flash-high",
+      "model_source": "measured",
+      "family": "gemini",
+      "role": "independent",
+      "fallback": {
+        "judged_by": "gemini-3.7-flash-high",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gemini-3.7-flash-high",
+            "family": "gemini",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    }
+  ],
+  "dissent": [],
+  "dedup": [
+    {
+      "file": "CHANGELOG.md",
+      "line": 53,
+      "lanes_agreeing": [
+        3
+      ],
+      "claims": [
+        "CHANGELOG.md records the addition of the executing fixtures under PMAT-2150 without production code changes"
+      ]
+    },
+    {
+      "file": "crates/xpile/tests/fixtures/hybrid_float32/app.py",
+      "line": 23,
+      "lanes_agreeing": [
+        1,
+        3
+      ],
+      "claims": [
+        "The executing fixture hybrid_float32 passes True into a float slot",
+        "hybrid_float32/app.py adds executing test cases twice(True) and twice(False) converting bool to float (1.0 -> 2.0 and 0.0 -> 0.0)"
+      ]
+    },
+    {
+      "file": "crates/xpile/tests/fixtures/hybrid_long/app.py",
+      "line": 13,
+      "lanes_agreeing": [
+        1
+      ],
+      "claims": [
+        "The executing fixture hybrid_long passes True into a long long slot"
+      ]
+    },
+    {
+      "file": "crates/xpile/tests/fixtures/hybrid_long/app.py",
+      "line": 14,
+      "lanes_agreeing": [
+        3
+      ],
+      "claims": [
+        "hybrid_long/app.py adds executing test cases triple(True) and triple(False) converting bool to long long (1 -> 3 and 0 -> 0)"
+      ]
+    },
+    {
+      "file": "crates/xpile/tests/hybrid_scalar_widths.rs",
+      "line": 69,
+      "lanes_agreeing": [
+        1,
+        3
+      ],
+      "claims": [
+        "The hybrid_scalar_widths.rs test updates expected MATCH output to include the bool conversion result 2.0\\n0.0 for float",
+        "hybrid_scalar_widths.rs strengthens float_boundary_matches_cpython_without_repair assertion to 6 lines including \\n2.0\\n0.0"
+      ]
+    },
+    {
+      "file": "crates/xpile/tests/hybrid_scalar_widths.rs",
+      "line": 128,
+      "lanes_agreeing": [
+        1,
+        3
+      ],
+      "claims": [
+        "The hybrid_scalar_widths.rs test updates expected MATCH output to include the bool conversion result 3\\n0 for long long",
+        "hybrid_scalar_widths.rs strengthens long_long_boundary_is_compared_not_skipped assertion to 4 lines including \\n3\\n0"
+      ]
+    },
+    {
+      "file": "docs/roadmaps/roadmap.yaml",
+      "line": 27264,
+      "lanes_agreeing": [
+        3
+      ],
+      "claims": [
+        "roadmap.yaml registers PMAT-2150 with acceptance criteria matching issue scope"
+      ]
+    }
+  ],
+  "uncovered": [],
+  "coverage_source": "lanes",
+  "partial": false,
+  "partial_reasons": [],
+  "fallback": {
+    "same_family_width": 1,
+    "chain": [
+      {
+        "model": "gemini-3.1-pro-high",
+        "family": "gemini",
+        "disposition": "configured"
+      },
+      {
+        "model": "gemini-3.8-flash-high",
+        "family": "gemini",
+        "disposition": "configured"
+      },
+      {
+        "model": "gemini-3.7-flash-high",
+        "family": "gemini",
+        "disposition": "configured"
+      },
+      {
+        "model": "gpt-oss-120b-medium",
+        "family": "openai",
+        "disposition": "fallback"
+      },
+      {
+        "model": "qwen3.5",
+        "family": "qwen",
+        "disposition": "not-run",
+        "why": "no quorum.local_lane in the config — the aprender lane has no model to load"
+      },
+      {
+        "model": "claude-opus-4-6-thinking",
+        "family": "claude",
+        "disposition": "width",
+        "why": "same family as the author: at most 1 lane, recorded role width, counted toward no floor (R-15a)"
+      },
+      {
+        "model": "claude-sonnet-4-6",
+        "family": "claude",
+        "disposition": "width",
+        "why": "same family as the author: at most 1 lane, recorded role width, counted toward no floor (R-15a)"
+      }
+    ],
+    "precheck": [
+      {
+        "family": "gemini",
+        "model": "gemini-3.1-pro-high",
+        "probe": 1,
+        "outcome": "live"
+      }
+    ],
+    "prah": {
+      "source": "install-receipt",
+      "path": "/home/noah/.claude/skills/paiml-implement/bin/prah"
+    }
+  },
+  "auto_merge": {
+    "checked": true,
+    "was_armed": false,
+    "disarmed": false,
+    "note": "auto-merge not armed"
+  },
+  "lint": {
+    "ok": true,
+    "output": "receipt complete: kind=artifact lanes=3 author=claude-opus-5-5/claude"
+  }
+}
