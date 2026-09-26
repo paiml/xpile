@@ -4,6 +4,12 @@ on:
   pull_request:
   push:
     branches: [main]
+  # Nightly (PMAT-2166): re-run every job against main even when nothing
+  # merged, so drift in the stable toolchain, crates.io installs and the
+  # advisory DB goes red here instead of on the next unrelated PR.
+  schedule:
+    - cron: '23 6 * * *'
+  workflow_dispatch:
 
 env:
   CARGO_TERM_COLOR: always

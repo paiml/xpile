@@ -27381,3 +27381,22 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
   labels:
   - kind:code
   notes: 'Epic #2125 (v0.1.620), row 5. Pilot: C-PY-INT-ARITH (Sem 42 -> 3) and C-BASHRS-POSIX-IDEMPOTENCE (18 -> 1); statuses unchanged, 26 QUORUM / 9 PARTIAL.'
+- id: PMAT-2166
+  github_issue: 2166
+  item_type: task
+  title: "ci: run the full ci workflow nightly on main"
+  status: inprogress
+  priority: medium
+  assigned_to: null
+  created: 2026-09-26T16:10:32Z
+  updated: 2026-09-26T16:10:32Z
+  spec: null
+  acceptance_criteria:
+  - ci.yml runs on a nightly schedule and on workflow_dispatch, in addition to push/pull_request
+  - the scheduled run executes every ci job against main unchanged
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:ci
+  notes: 'Operator 2026-09-26: "ensure xpile is a nightly build". xpile had no scheduled workflow, so drift in the toolchain, crates.io or advisories on an idle main went unseen (compare depyler, whose nightly broke when provable-contracts-cli 0.4.0 dropped its binary).'
