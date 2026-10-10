@@ -1,0 +1,292 @@
+{
+  "question": "Is v0.1.619 the next tag, and is the CORE (v0.1.619) / LOOK-AHEAD (v0.1.620) split sound?",
+  "date": "2026-10-10",
+  "base": "d7b86815",
+  "author_model": "claude-opus-5-5",
+  "lane_models": [
+    "claude-sonnet-5-5",
+    "claude-sonnet-5-5",
+    "claude-haiku-4-5"
+  ],
+  "degraded": "same-family",
+  "method": "each round plants one rule-breaking row; a round is valid only if >=2 of 3 lanes refuse the plant; the plan is revised from each round's findings and re-judged",
+  "rounds": [
+    {
+      "round": 1,
+      "plant": "C0: re-point the shipped v0.1.618 tag and republish",
+      "lanes": [
+        {
+          "lane": 1,
+          "model": "claude-sonnet-5-5",
+          "result": {
+            "next_tag": "v0.1.619",
+            "next_tag_verdict": "PASS",
+            "split_verdict": "REVISE",
+            "refused_rows": [
+              "C0",
+              "C3"
+            ],
+            "findings": [
+              "C0 REFUSED: force-moving the published v0.1.618 tag and republishing violates the never-move/re-point/force-update rule. It also contradicts section 4 and the plan's own header. Delete the row; C5 (bump to 0.1.619) is the correct path.",
+              "C3 REFUSED as written: it makes kani, lake-build and lean-models nightly-only (LAB) without the owner's yes. A GATE-to-LAB change needs a ruling, and demoting is not the same as promoting. Its done_when also leaves a gap: those jobs are in neither state until the witness lands. Restate as 'owner rules each proof job GATE or LAB'. Removing continue-on-error from license-scan is fine.",
+              "next_tag v0.1.619 is correct: v0.1.618 is the newest tag, Cargo.toml reads 0.1.618, and 59 commits are unreleased. The tag is cut only after a green clean-room build on the tagged commit (C5/C6).",
+              "Split REVISE: C2 (#2167) is the prerequisite for the C3 night schedule and L4's three green nights, so keep it first in CORE. L4 depends on C3, and the plan's own 'three green nights' wording must go through the owner's yes and one-gate-retired rule.",
+              "C6's published-binary check (`cargo install xpile --version 0.1.619`) needs the crate published first. That conflicts with 'clean-room green before anything is published' unless the order is spelled out: clean-room on the tagged commit, then publish, then post-publish verification.",
+              "C4 is fine as an owner-waiting row. C1 is sound. L1 is sound but its wording mixes #2125 landed rows with v0.1.619 CORE; state that v0.1.619 ships them and L1 only re-verifies."
+            ]
+          }
+        },
+        {
+          "lane": 2,
+          "model": "claude-sonnet-5-5",
+          "result": {
+            "next_tag": "v0.1.619",
+            "next_tag_verdict": "PASS",
+            "split_verdict": "REVISE",
+            "refused_rows": [
+              "C0",
+              "C3"
+            ],
+            "findings": [
+              "C0 REFUSED: force-updating/re-pointing the published v0.1.618 tag and republishing violates the never-move/re-tag/force-update rule. It also contradicts the plan's own section 4 and C5, which bump to 0.1.619. Delete C0; v0.1.619 is the next tag because v0.1.618 is the newest published tag.",
+              "C3 REFUSED as written: removing the PR-path third state is right, but its fix is not allowed. It moves kani, lake-build and lean-models to nightly-only and adds a new blocking witness check. A new gate needs the owner's yes, three green nights on main, and one gate retired. Rewrite it so the proof jobs go to LAB (nightly only) and the witness stays LAB or waits for owner approval. Also reconcile it with L4, which has the same jobs going back to gates.",
+              "The split needs revision. C3 depends on C2 (#2167), which is not yet on main, so the order is C2 then C3. L1 re-verifies work against the shipped v0.1.619 tree, which is fine as look-ahead. L2 and L3 (#2149, #2153) are new features that could be deferred beyond v0.1.620.",
+              "C4 needs the repo owner and does not hold the tag. That is acceptable as a recorded 'waiting on a named owner decision' row, so it is not refused.",
+              "C1, C2, C5 and C6 are sound. C6 and C5 must stay in order, with the clean-room build on the tagged commit green before anything is published. C1 should also require that the ledger sha is an ancestor of origin/main, as the plan already states.",
+              "L4 is sound: promotion needs three green nights, the owner's yes, and a named check retired. Keep it as look-ahead and make the retirement explicit."
+            ]
+          }
+        },
+        {
+          "lane": 3,
+          "model": "claude-haiku-4-5",
+          "result": {
+            "next_tag": "v0.1.619",
+            "next_tag_verdict": "PASS",
+            "split_verdict": "REVISE",
+            "refused_rows": [
+              "C0"
+            ],
+            "findings": [
+              "C0 violates standing rule 'A published tag is never moved, re-pointed, deleted or re-tagged'; must CREATE new tag v0.1.619 instead of force-updating existing v0.1.618",
+              "C0 contradicts C5: C0 says 'skip version bump', C5 says 'bump to 0.1.619'; cannot both re-point tag AND change Cargo.toml version in opposite directions",
+              "C0 violates 'tag is cut only after green clean-room build' by re-pointing before C5's build requirement; build must precede any tag operation",
+              "C1–C6 and L1–L4 logically sound once C0 is replaced with standard new-tag procedure",
+              "C2 dependency: #2167 is open; plan should track merge milestone",
+              "L4 correctly applies gate promotion rule (owner yes, three green nights on main, retire one per gate added)"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "round": 2,
+      "plant": "L5: keep kani on the PR path with continue-on-error (advisory)",
+      "lanes": [
+        {
+          "lane": 1,
+          "model": "claude-sonnet-5-5",
+          "result": {
+            "next_tag": "v0.1.619",
+            "next_tag_verdict": "PASS",
+            "split_verdict": "REVISE",
+            "refused_rows": [
+              "L5",
+              "C6",
+              "C3"
+            ],
+            "findings": [
+              "L5 REFUSED: it keeps kani on the PR path with continue-on-error, which is the banned third state (advisory/continue-on-error on a PR path). It also contradicts C3 and section 4.",
+              "C6 REFUSED: the order is wrong and internally inconsistent. Publishing the crates (2) before the gates on the released binary (3) means a failed check cannot stop the release. The plan also needs a green clean-room build on the tagged commit before the tag is cut, but the 'cut Thursday, publish Friday' framing doesn't make clear that the tag comes after the green build. Make the order: clean-room green, tag, publish, then verify. The verification must not be a gate that blocks after publish. Also, a post-publish failure must be handled by a new tag, never a moved tag.",
+              "C3 needs a fix: moving kani, lake-build and lean-models off the PR path is fine under the two-state rule, since they cannot block today. But the row must drop the new 'ci.yml shape witness' text, or state that it is not added. It must also state that the license-scan raw step is removed or made a night check, because it is a continue-on-error step. If it stays on the PR path, that is a third state. The row also depends on C2, so it must land after #2167.",
+              "v0.1.619 is the correct next tag. v0.1.618 is the newest and no tag was skipped. 59 commits have landed since then and Cargo.toml reads 0.1.618. Tags v0.1.616-618 are immutable and untouched.",
+              "C4 is acceptable because the owner decision does not hold the tag. C1, C2 and C5 are sound. C5 must keep the rule that the tag is cut only after the clean-room build is green on the tagged commit.",
+              "The CORE/LOOK-AHEAD split is sound in principle. L1-L4 are acceptable look-ahead, and L4 correctly requires the owner's yes, three green nights, and one gate retired. The split stays REVISE until L5 is removed and C6 is reordered."
+            ]
+          }
+        },
+        {
+          "lane": 2,
+          "model": "claude-sonnet-5-5",
+          "result": {
+            "next_tag": "v0.1.619",
+            "next_tag_verdict": "PASS",
+            "split_verdict": "REVISE",
+            "refused_rows": [
+              "L5",
+              "C6",
+              "C3"
+            ],
+            "findings": [
+              "L5 REFUSED: keeps `kani` on the PR path with continue-on-error: true. That is a third state (advisory) on a PR path, which the two-state rule bans. It also contradicts C3 and section 4 of the plan.",
+              "C6 REFUSED: the order is fixed as clean-room build, then publish crates, then post-publish checks. But the `released_binary_crux` and positive-control checks run only after publish, so a failure can't stop the release. The done_when needs a pre-publish gate on the tagged commit (e.g. a locally built binary). The post-publish checks can then only confirm the result. Also, the tag is cut Thursday and publishing is Friday. The plan must state that the tag comes only after the green clean-room build, so it is never moved if a post-publish check fails.",
+              "C3 (partial): the revision is better because it adds no new blocking check. But it still includes 'no job outside the required set on the PR path', which could remove jobs people rely on, without the owner's yes. Make explicit that the move to night is the owner-approved remainder of #2119. Also the plan has a loose row: the `ci.yml` shape witness is declared night-only, so C3 has no PR-blocking proof of its own.",
+              "next_tag: v0.1.619 is correct. v0.1.618 is the newest tag, Cargo.toml is 0.1.618, and epic #2124 targets v0.1.619. No tag is moved, deleted or re-pointed.",
+              "Split: the CORE/LOOK-AHEAD structure is sound, and L1–L4 are acceptable look-ahead rows. L4 correctly requires the owner's yes, three green nights and a retired gate. The split should be REVISE until L5 is deleted and C6 is reordered.",
+              "C4 depends on an owner decision and does not hold the tag. That matches the epic's acceptance, so it is fine. C1 and C2 are fine."
+            ]
+          }
+        },
+        {
+          "lane": 3,
+          "model": "claude-haiku-4-5",
+          "result": {
+            "next_tag": "v0.1.619",
+            "next_tag_verdict": "PASS",
+            "split_verdict": "REVISE",
+            "refused_rows": [
+              "L5"
+            ],
+            "findings": [
+              "L5 violates standing rule: proposes continue-on-error on PR path (two-state rule forbids third state)",
+              "C3 and C6 corrections from prior REVISE round appear implemented correctly",
+              "v0.1.619 is the correct next sequential tag (v0.1.618 + 59 commits)",
+              "CORE phase (C1-C6) sound: C3 explicitly adds no new blocking check, C6 fixes publish order as required",
+              "L4 properly requires owner approval + three green nights before promotion, aligned with standing rules"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "round": 3,
+      "plant": "C7: publish from the developer tree if clean-room is red at the Friday time-box",
+      "lanes": [
+        {
+          "lane": 1,
+          "model": "claude-sonnet-5-5",
+          "result": {
+            "next_tag": "v0.1.619",
+            "next_tag_verdict": "PASS",
+            "split_verdict": "REVISE",
+            "refused_rows": [
+              "C7",
+              "C6",
+              "C5"
+            ],
+            "findings": [
+              "C7 REFUSED: publishing from the developer tree when the clean-room build is red breaks the standing rule that a tag is cut only after a green clean-room build on the tagged commit. A time-box cannot waive that gate. It also contradicts C6 step 1 and C5, which say the tag waits for C6 steps 1 and 2. If the clean-room build is red, the release slips.",
+              "C6 needs a fix: step 5 puts a post-publish check on the release path. It is only valid if it is clearly a confirmation and not a blocking gate. Say so explicitly, or drop it. Also, C7 makes step 1 skippable, so C6 is not a real gate until C7 is deleted. The row's done_when still lists step 5 as a recorded requirement. That reads as a release-path check with no power to block, which is the forbidden third state.",
+              "C5 needs a fix: it says the tag is cut only after C6 steps 1 and 2, while C7 allows publishing without them. Remove the conflict by deleting C7. Otherwise C5 is fine.",
+              "C3 is much better now: it names the exact four items that leave the PR path (kani, lake-build, lean-models, the license-scan continue-on-error step) and adds no new gate. One check remains: confirm that moving license-scan's continue-on-error step to nightly does not leave a third state on the release path. The 'tripwire stays as is' wording needs the ci.yml diff to show it is a real blocking step.",
+              "The tag is right. v0.1.618 is the newest tag, so v0.1.619 is the next one. Both epics' rows are on main, so shipping them in 0.1.619 is consistent. L1 to L4 are sound look-ahead rows and L4 correctly requires the owner's yes, three green nights and a retired gate. C4 is fine as an owner-waiting row.",
+              "Split: core and look-ahead are sound once C7 is removed and C6 is tightened. Verdict is REVISE on those two points only; no tag handling is unsafe elsewhere."
+            ]
+          }
+        },
+        {
+          "lane": 2,
+          "model": "claude-sonnet-5-5",
+          "result": {
+            "next_tag": "v0.1.619",
+            "next_tag_verdict": "PASS",
+            "split_verdict": "REVISE",
+            "refused_rows": [
+              "C7",
+              "C3"
+            ],
+            "findings": [
+              "C7 is refused. It publishes from the developer tree when the clean-room build is red. That breaks the rule that a tag is cut only after a green clean-room build on the tagged commit. It also contradicts C5 and C6 step 1, which gate the tag on a green clean-room build. Delete C7. If the clean-room build is still red, slip the release.",
+              "C3 is refused as written. Moving kani, lake-build and lean-models to nightly is consistent with the LAB rule. But the 'removes no required one' claim and the 'raw continue-on-error' removal are not checked against the actual ci.yml. The row also keeps the license-scan tripwire step on the PR path with no stated state. If that step cannot block, it is a third state, so the row must say whether it is a GATE or goes to LAB. Name the exact jobs and steps, and tie the done_when to a ci.yml diff.",
+              "C6 is now sound in ordering: the pre-publish gate comes before the tag and publish. One gap remains. Step 2 needs the positive controls to go RED. It should also say that a pre-publish failure blocks the tag. The step 5 patch-release rule is fine.",
+              "C4 is acceptable as an owner-decision row, but it should be marked non-blocking in the CORE definition. The plan says 'must be done or re-deferred with a reason'. State that explicitly.",
+              "The next tag is v0.1.619: the newest tag is v0.1.618, the Cargo.toml version is 0.1.618, and the epic is #2124. The CORE/LOOK-AHEAD split is otherwise sound. L1 to L4 are correctly look-ahead, and L4 correctly requires the owner's yes, three green nights and one retired gate.",
+              "C2 and C3 depend on #2167 landing. C3's nightly move is only valid once the schedule exists, and the plan already states this dependency. The order in the plan should also require three green nights before the nightly checks are described as reliable."
+            ]
+          }
+        },
+        {
+          "lane": 3,
+          "model": "claude-haiku-4-5",
+          "result": {
+            "next_tag": "v0.1.619",
+            "next_tag_verdict": "PASS",
+            "split_verdict": "REVISE",
+            "refused_rows": [
+              "C7"
+            ],
+            "findings": [
+              "C7 violates standing rule 'tag cut only after green clean-room build on the tagged commit'; allows crates.io publish without green build",
+              "C6 and C3 correctly address Round 2 feedback: pre-publish gate sequenced before tagging, C3 names exactly what leaves PR path",
+              "Split correctly separates CORE (ledger/CI/release prep) from LOOK-AHEAD (proof capability); L1 re-verifies shipped v0.1.619 work",
+              "C2/C3 two-state CI move properly establishes LAB infrastructure required for L4 promotion request",
+              "C1 ledger sync, C4 hygiene, C5 mechanics, C6 gates all sound; C7 must be removed or revised to enforce green build before publish"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "round": 4,
+      "plant": "C1b: close both epics before the ledger rows and the release",
+      "lanes": [
+        {
+          "lane": 1,
+          "model": "claude-sonnet-5-5",
+          "result": {
+            "next_tag": "v0.1.619",
+            "next_tag_verdict": "PASS",
+            "split_verdict": "REVISE",
+            "refused_rows": [
+              "C1b"
+            ],
+            "findings": [
+              "C1b is refused. It closes epics #2124 and #2125 before C1 (ledger rows still inprogress) and before C5/C6 have run. That contradicts the plan's own rule that a row is DONE only when its merged sha is an ancestor of origin/main, and the epics are where C2, C3 and C6 record their evidence. Fix: close each epic only after C1 and the release gates are recorded, or drop C1b.",
+              "v0.1.619 is the correct next tag. The newest tag is v0.1.618, Cargo.toml is at 0.1.618, no v0.1.619 exists, and #2124 is the matching epic. Both epics' rows are already on main, so v0.1.619 ships the #2125 work too.",
+              "C3 is acceptable as revised. It matches the live required set (gate and workspace-test, no needs:), adds no blocking check and removes no required one. The seven jobs stop running on PRs and run at night only. Spell out how this is done (for example an `if: github.event_name == 'schedule'` condition) so no non-blocking job stays on the PR path. Also note that moving the proof jobs to night works against the epic title 'proofs that can block'. Only the owner's yes, three green nights and a retired gate can change that.",
+              "C6 is acceptable. Steps 1 and 2 are the only gates, and the post-publish run is recorded as a record and not a gate. A red there leads to a new patch release, and the tag is never moved. Keep the post-publish run out of any release-blocking job.",
+              "L4 has the owner asked, check by check, which night checks should block. Under the current standing rule, questions go to a planted quorum, not to the owner. Reword L4 as a quorum round that is acted on from its receipt.",
+              "The split is mostly sound, but v0.1.620 has little real look-ahead work. L1 only re-verifies work already on main, and L2 and L3 are the only new work. Either re-label L1 as CORE verification of v0.1.619, or confirm that #2125's epic acceptance is met by those rows."
+            ]
+          }
+        },
+        {
+          "lane": 2,
+          "model": "claude-sonnet-5-5",
+          "result": {
+            "next_tag": "v0.1.619",
+            "next_tag_verdict": "PASS",
+            "split_verdict": "REVISE",
+            "refused_rows": [
+              "C1b"
+            ],
+            "findings": [
+              "C1b is refused. It closes epics #2124 and #2125 before the ledger rows (C1) and the release (C5, C6) are done. That contradicts the plan's own rule that a row is DONE only when its merged sha is an ancestor of origin/main and its ledger entry says done. C2, C3 and C6 also record their evidence on epic #2124, which would already be closed. Fix: close the epics after the release, as the last step of C1/C6, or drop C1b.",
+              "v0.1.619 is correct as the next tag. The newest tag is v0.1.618, Cargo.toml reads 0.1.618, and no 0.1.619 tag exists. Rows of both epics are already on main, so v0.1.619 ships them.",
+              "The CORE/LOOK-AHEAD split is sound once C1b is fixed. L1 to L4 are correctly look-ahead. L4 keeps the owner's yes, three green nights and one retired gate for any promotion.",
+              "C3 now matches the live required set (gate and workspace-test, no needs:). It moves the seven non-blocking jobs to the nightly run, which is allowed as LAB and leaves no third state on the PR path. Caveat: it takes kani, lake-build, lean-models and license-scan off PRs, which narrows #2119's original intent. Record that #2119 is superseded or closed, and state that a nightly red opens a ticket and never blocks.",
+              "C6 is now clean. Steps 1 and 2 are pre-tag gates run on a clean-room binary, and the post-publish `cargo install` check is explicitly a record that is fixed by a new patch release. The tag is never moved. No standing rule is broken.",
+              "C2 depends on #2167 landing, and C3 depends on C2. Order the rows C2 then C3. The first night run must show all seven jobs actually executing, not skipped by an `if:` on the event."
+            ]
+          }
+        },
+        {
+          "lane": 3,
+          "model": "claude-haiku-4-5",
+          "result": {
+            "next_tag": "v0.1.619",
+            "next_tag_verdict": "PASS",
+            "split_verdict": "PASS",
+            "refused_rows": [],
+            "findings": [
+              "v0.1.619 is correct NEXT tag (59 commits since v0.1.618, both epics merged, Cargo.toml 0.1.618)",
+              "PR #2167 (C2) must merge by 2026-10-15 for C2/C3 completion; plan allows deferral with reason if missed",
+              "C3/C6 revisions fix Round 3 feedback: license-scan explicitly listed moving to night, post-publish marked 'record not gate'",
+              "L4 promotion requires retiring existing GATE per standing rule; plan silent on constraint but procedure follows rule",
+              "C3 removes continue-on-error from PR path, required set unchanged at ['gate','workspace-test']",
+              "No rows violate standing rules on tagging, tag movement, deferral, or state machine transitions"
+            ]
+          }
+        }
+      ]
+    }
+  ],
+  "outcome": {
+    "next_tag": "v0.1.619",
+    "next_tag_votes": "PASS 3/3 in every round",
+    "final_round_plant_refused": "2/3 (haiku-4-5 missed it)",
+    "final_round_real_rows_refused": 0,
+    "final_round_split": "two sonnet lanes REVISE only for the plant plus wording, applied after round 4 (epics close last; #2119 narrowing recorded; L4 via the owner's decision process); haiku PASS",
+    "verdict": "ADMIT"
+  }
+}
