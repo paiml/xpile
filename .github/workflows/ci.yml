@@ -107,18 +107,6 @@ jobs:
   # XPILE-ENFORCEMENT REQUIRED-CONTEXTS: gate, workspace-test
   # XPILE-ENFORCEMENT ADVISORY-CONTEXTS: docs, kani, lake-build, lean-models, license-scan, shader-validate, wasi
   #
-  # TWO-STATE CI (PMAT-2170, row C3 of release-v0.1.619-plan.md). A check that
-  # cannot block a merge does not run on the pull-request path. Every ADVISORY
-  # job above carries exactly the job-level
-  #   if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
-  # so it runs only on the nightly schedule and on a manual dispatch (RELEASE.md
-  # §5 step 2 dispatches ci on the pinned SHA). A red there opens or updates one
-  # issue with one owner and never holds a merge or a tag. The REQUIRED jobs
-  # carry no job-level `if:` and need no night job. Making a night job blocking
-  # is the owner's ruling (plan row L4). Pinned by
-  # `crates/xpile/tests/night_checks_off_pr_path.rs` (XPILE-NIGHT-CHECKS-001),
-  # which reads the ADVISORY marker, so a job listed there must be night-only.
-  #
   # ⚠️ THIS PROSE IS NOT GATED, AND THAT IS WHY IT ROTTED (PMAT-1501, measured).
   # `enforcement_prose_witness.rs` (XPILE-ENFORCE-PROSE-001) exists for exactly
   # the defect above and could not see it, for TWO independent reasons:
@@ -148,6 +136,20 @@ jobs:
   # + `lake-build` as required is an ORG-ADMIN action and is OWNER-GATED (the
   # repo-level rulesets endpoint 404s for an org-sourced ruleset); it is
   # recorded as the `ruleset-reflip` owner decision, not as a task.
+  #
+  # TWO-STATE CI (PMAT-2170, row C3 of release-v0.1.619-plan.md). A check that
+  # cannot block a merge does not run on the pull-request path. Every ADVISORY
+  # job in the marker line above carries exactly the job-level
+  #   if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+  # so it runs only on the nightly schedule and on a manual dispatch (RELEASE.md
+  # §5 step 2 dispatches ci on the pinned SHA). A red there opens or updates one
+  # issue with one owner and never holds a merge or a tag. The REQUIRED jobs
+  # carry no job-level `if:` and need no night job. Making a night job blocking
+  # is the owner's ruling (plan row L4). Pinned by
+  # `crates/xpile/tests/night_checks_off_pr_path.rs` (XPILE-NIGHT-CHECKS-001),
+  # which reads the ADVISORY marker, so a job listed there must be night-only,
+  # and which also requires the `schedule:` and `workflow_dispatch:` triggers in
+  # `on:` (PMAT-2166), without which a night job never runs at all.
   workspace-test:
     name: workspace-test
     runs-on: ubuntu-latest
