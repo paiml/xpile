@@ -411,7 +411,10 @@ tier), which is where you should read it.
 
 1. **Re-verify A1** (§6). All preconditions, before the first upload byte.
 2. **Record the advisory statuses** on the pinned SHA and name every
-   non-success in the release body:
+   non-success in the release body. The advisory jobs run only on `schedule`
+   and `workflow_dispatch` (PMAT-2170), so dispatch them first:
+   `gh workflow run ci.yml --ref main` while `main` is still `<PINNED_SHA>`
+   (A7), then wait for that run and check its `head_sha` is `<PINNED_SHA>`.
 
    ```bash
    gh api "repos/paiml/xpile/commits/<PINNED_SHA>/check-runs" \
