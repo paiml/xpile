@@ -27381,3 +27381,22 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
   labels:
   - kind:code
   notes: 'Epic #2125 (v0.1.620), row 5. Pilot: C-PY-INT-ARITH (Sem 42 -> 3) and C-BASHRS-POSIX-IDEMPOTENCE (18 -> 1); statuses unchanged, 26 QUORUM / 9 PARTIAL.'
+- id: PMAT-2170
+  github_issue: 2170
+  item_type: task
+  title: 'PMAT-2170: two-state CI — the seven non-blocking ci.yml jobs run only on schedule and workflow_dispatch (C3 of epic #2124)'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-10-13T21:54:56Z
+  updated: 2026-10-13T21:54:56Z
+  spec: null
+  acceptance_criteria:
+  - 'Plan row C3 of docs/specifications/sub/release-v0.1.619-plan.md. Seven ci.yml jobs (kani, lake-build, docs, wasi, lean-models, shader-validate, license-scan) cannot block a merge; give each the job-level if: github.event_name == ''schedule'' || github.event_name == ''workflow_dispatch''. gate and workspace-test unchanged. Falsifier crates/xpile/tests/night_checks_off_pr_path.rs.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 2124
