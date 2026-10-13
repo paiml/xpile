@@ -25,6 +25,10 @@
 //! 4. every `continue-on-error` in the workflow sits inside a job that carries
 //!    [`NIGHT_IF`] (being listed as advisory is not enough), so
 //!    none is left on the pull-request path.
+//! 5. the workflow triggers on `schedule` and on `workflow_dispatch`, so the
+//!    night condition can come true: a night job in a workflow with no night
+//!    trigger never runs, and that is a check turned off, not moved (#2167
+//!    adds both triggers; this branch merges after it).
 //!
 //! RED arm, recorded in the PR: on the tree before PMAT-2170 (no `if:` on the
 //! seven jobs) assertion 1 fails for all seven and assertion 4 fails for
@@ -161,5 +165,26 @@ fn no_continue_on_error_is_left_on_the_pull_request_path() {
         "`continue-on-error` on the pull-request path is a third state (a check \
          that runs and cannot fail); move it to a night job or remove it:\n  {}",
         found.join("\n  ")
+    );
+}
+
+#[test]
+fn the_night_jobs_have_a_night_to_run_in() {
+    let y = ci_yaml();
+    let on = y["on"].as_mapping().expect("ci.yml has an `on:` mapping");
+    let missing: Vec<&str> = ["schedule", "workflow_dispatch"]
+        .into_iter()
+        .filter(|t| !on.contains_key(*t))
+        .collect();
+    assert!(
+        missing.is_empty(),
+        "{CI} gates its night jobs on `{NIGHT_IF}` but has no {missing:?} \
+         trigger, so those jobs never run anywhere"
+    );
+    assert!(
+        on["schedule"]
+            .as_sequence()
+            .is_some_and(|s| s.iter().any(|e| e["cron"].as_str().is_some())),
+        "{CI} `schedule:` carries no `cron:` entry, so the night never comes"
     );
 }
