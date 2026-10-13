@@ -7,7 +7,7 @@
 
 ## What the diff does
 
-Only `docs/roadmaps/roadmap.yaml` changes, and only those ten rows: `status: inprogress` becomes `status: done`, `updated:` is set to the edit time, and `notes` gains one sentence naming the full merged sha and the PR. No other row, no code, no test, no workflow.
+Two files change: this receipt, and `docs/roadmaps/roadmap.yaml`. In the roadmap only those ten rows change: `status: inprogress` becomes `status: done`, `updated:` is set to the edit time, and `notes` gains one sentence naming the full merged sha and the PR. No other row, no code, no test, no workflow.
 
 | id | merged sha | PR |
 |---|---|---|
@@ -31,4 +31,4 @@ Only `docs/roadmaps/roadmap.yaml` changes, and only those ten rows: `status: inp
 
 ## Refute it
 
-A row whose sha is not an ancestor of origin/main, whose sha is not the PR named, or whose issue is open fails the row. So does any change outside the ten rows.
+A row whose sha is not an ancestor of origin/main, whose sha is not the PR named, or whose issue is open fails the row. So does any change outside the ten roadmap rows and this receipt.
