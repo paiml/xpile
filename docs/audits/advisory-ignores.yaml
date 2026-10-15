@@ -28,13 +28,17 @@
 # unowned obligation that expires into a red nobody consumes. The review date IS
 # `removed_by`; there is no second date field.
 #
-# All seven arrive via rustpython-parser (depyler-frontend's Python parser) and
+# Seven arrive via rustpython-parser (depyler-frontend's Python parser) and
 # are unmaintained-ecosystem advisories rather than vulnerabilities. Five of
 # them previously read only "# unmaintained ecosystem dep" and named no crate
 # (0075, 0080, 0090, 0098, 0100 — a first draft of this file said three, and a
 # review lane counted);
 # an exemption nobody can identify is one nobody can retire, so the names below
 # were recovered from cargo-deny's own output.
+#
+# The eighth, RUSTSEC-2024-0449 (unsafe-libyaml, PMAT-2172), arrives via
+# serde_yaml 0.9, not rustpython-parser. It was not added to a changed tree: the
+# advisory-db moved under an unchanged main and turned `ci / gate` red.
 
 max_window_days: 90
 ignores:
@@ -104,3 +108,17 @@ ignores:
   removed_by: '2026-10-20'
   reason: unic-ucd-ident, via rustpython-parser. Crate name recovered from cargo-deny output.
     MEASURED live 2026-09-20 by the removal test.
+- id: RUSTSEC-2024-0449
+  crate: unsafe-libyaml
+  class: unmaintained
+  source: deny
+  owner: noah
+  owner_ticket: PMAT-2172
+  removed_by: '2026-11-30'
+  reason: 'unsafe-libyaml 0.2.11, reached via serde_yaml 0.9.34+deprecated, which xpile, xpile-contracts,
+    xpile-forjar-codegen and the third-party aprender-contracts 0.33.0 all depend on. Unmaintained
+    upstream, not a vulnerability. The advisory-db changed under an unchanged tree: main''s gate was
+    green on 2026-10-10 and red from PR #2171''s run on 2026-10-13. MEASURED live 2026-10-15:
+    removing this ignore alone takes `cargo deny check advisories` from exit 0 to exit 1. Removal
+    needs both halves: the in-tree crates off serde_yaml AND an aprender-contracts release without
+    it; dropping only the in-tree uses leaves the advisory reachable.'
