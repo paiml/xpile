@@ -29,6 +29,16 @@
 //!    night condition can come true: a night job in a workflow with no night
 //!    trigger never runs, and that is a check turned off, not moved (#2167
 //!    adds both triggers; this branch merges after it).
+//! 6. (PMAT-2174) the red has somewhere to go: the LAST step of every night
+//!    job is the `night-issue` action, under exactly [`ISSUE_IF`], with
+//!    `check:` set to its own job id and `issues: write` on the job; no other
+//!    job (required or not) calls it; the action names exactly one owner.
+//! 7. (PMAT-2174) the action's script, EXECUTED against a stub `gh` (no
+//!    network): it refuses every event but `schedule` before calling gh; it
+//!    comments on an open issue whose title is exactly
+//!    `night: <check> red on main` and creates nothing; it creates the issue,
+//!    assigned to the one owner, when only a near-miss title exists; and a
+//!    failed lookup fails the step without creating anything.
 //!
 //! RED arm, recorded in the PR: on the tree before PMAT-2170 (no `if:` on the
 //! seven jobs) assertion 1 fails for all seven and assertion 4 fails for
@@ -186,5 +196,247 @@ fn the_night_jobs_have_a_night_to_run_in() {
             .as_sequence()
             .is_some_and(|s| s.iter().any(|e| e["cron"].as_str().is_some())),
         "{CI} `schedule:` carries no `cron:` entry, so the night never comes"
+    );
+}
+
+// ── PMAT-2174: a red night opens or updates its one issue ──────────────────
+
+const ACTION: &str = ".github/actions/night-issue/action.yml";
+const ACTION_USES: &str = "./.github/actions/night-issue";
+/// The one step-level condition on the issue step. `failure()` means it runs
+/// only after its job has already failed, so it can never turn a job green or
+/// red; `schedule` alone means a pull request, a merge group, a push and a
+/// manual dispatch file nothing. Exact string, like [`NIGHT_IF`].
+const ISSUE_IF: &str = "failure() && github.event_name == 'schedule'";
+
+fn action_yaml() -> serde_yaml::Value {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let text =
+        std::fs::read_to_string(root.join(ACTION)).unwrap_or_else(|e| panic!("read {ACTION}: {e}"));
+    serde_yaml::from_str(&text).unwrap_or_else(|e| panic!("parse {ACTION}: {e}"))
+}
+
+fn calls_the_action(step: &serde_yaml::Value) -> bool {
+    step["uses"].as_str().map(str::trim) == Some(ACTION_USES)
+}
+
+#[test]
+fn every_night_job_ends_by_filing_its_one_issue() {
+    let y = ci_yaml();
+    let mut wrong = Vec::new();
+    for id in marker_set(ADVISORY_MARKER) {
+        let j = job(&y, &id);
+        let steps = j["steps"].as_sequence().cloned().unwrap_or_default();
+        let calls: Vec<&serde_yaml::Value> = steps.iter().filter(|s| calls_the_action(s)).collect();
+        if calls.len() != 1 {
+            wrong.push(format!(
+                "{id}: calls {ACTION_USES} {} times, not once",
+                calls.len()
+            ));
+            continue;
+        }
+        if !steps.last().is_some_and(calls_the_action) {
+            wrong.push(format!(
+                "{id}: the issue step is not the LAST step, so failure() cannot see the steps after it"
+            ));
+        }
+        let s = calls[0];
+        if s["if"].as_str().map(str::trim) != Some(ISSUE_IF) {
+            wrong.push(format!(
+                "{id}: issue step if = {:?}, not `{ISSUE_IF}`",
+                s["if"]
+            ));
+        }
+        if !s["continue-on-error"].is_null() {
+            wrong.push(format!("{id}: issue step carries continue-on-error"));
+        }
+        if s["with"]["check"].as_str() != Some(id.as_str()) {
+            wrong.push(format!(
+                "{id}: issue step check = {:?}, not its own job id",
+                s["with"]["check"]
+            ));
+        }
+        if j["permissions"]["issues"].as_str() != Some("write") {
+            wrong.push(format!("{id}: job lacks `permissions: issues: write`"));
+        }
+    }
+    assert!(
+        wrong.is_empty(),
+        "a red night check must open or update its one issue (PMAT-2174):\n  {}",
+        wrong.join("\n  ")
+    );
+}
+
+#[test]
+fn only_night_jobs_file_issues_and_the_action_names_one_owner() {
+    let y = ci_yaml();
+    let night = marker_set(ADVISORY_MARKER);
+    let jobs = y["jobs"].as_mapping().expect("ci.yml has a jobs: mapping");
+    let outside: Vec<String> = jobs
+        .iter()
+        .filter_map(|(id, j)| {
+            let id = id.as_str().unwrap_or_default().to_string();
+            let calls = j["steps"]
+                .as_sequence()
+                .into_iter()
+                .flatten()
+                .any(calls_the_action);
+            (calls && !night.contains(&id)).then_some(id)
+        })
+        .collect();
+    assert!(
+        outside.is_empty(),
+        "job(s) {outside:?} call {ACTION_USES} but are not night jobs; a gate's red is the \
+         gate's own verdict, not a ticket"
+    );
+    let a = action_yaml();
+    let owner = a["inputs"]["owner"]["default"].as_str().unwrap_or_default();
+    assert!(
+        !owner.is_empty() && owner.chars().all(|c| c.is_ascii_alphanumeric() || c == '-'),
+        "{ACTION} must name exactly ONE owner login as `inputs.owner.default`, got {owner:?}"
+    );
+    let steps = a["runs"]["steps"]
+        .as_sequence()
+        .expect("composite action has steps");
+    assert_eq!(steps.len(), 1, "{ACTION} is one script step");
+    let run = steps[0]["run"]
+        .as_str()
+        .expect("the step has a run: script");
+    assert!(
+        !run.contains("${{"),
+        "{ACTION}'s script interpolates an expression; inputs reach it through `env:` only"
+    );
+}
+
+/// The action's script, run by bash against a stub `gh` that records every
+/// call. Returns (exit code, the recorded gh calls).
+fn run_action(event: &str, listed: &str, list_rc: i32) -> (i32, Vec<String>) {
+    let a = action_yaml();
+    let run = a["runs"]["steps"][0]["run"]
+        .as_str()
+        .expect("script")
+        .to_string();
+    static SEQ: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+    let seq = SEQ.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+    let dir = std::env::temp_dir().join(format!("xpile-night-issue-{}-{seq}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("stub dir");
+    let log = dir.join("gh.log");
+    let stub = dir.join("gh");
+    std::fs::write(
+        &stub,
+        "#!/bin/bash\nprintf '%s\\n' \"$*\" >> \"$STUB_LOG\"\n\
+         if [ \"$1 $2\" = \"issue list\" ]; then printf '%b' \"$STUB_LIST\"; exit \"$STUB_LIST_RC\"; fi\n\
+         exit 0\n",
+    )
+    .expect("write stub gh");
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&stub, std::fs::Permissions::from_mode(0o755)).expect("chmod");
+    }
+    let path = format!(
+        "{}:{}",
+        dir.display(),
+        std::env::var("PATH").unwrap_or_default()
+    );
+    let status = std::process::Command::new("bash")
+        .arg("-c")
+        .arg(&run)
+        .env("PATH", path)
+        .env("STUB_LOG", &log)
+        .env("STUB_LIST", listed)
+        .env("STUB_LIST_RC", list_rc.to_string())
+        .env("GITHUB_EVENT_NAME", event)
+        .env("CHECK", "kani")
+        .env("OWNER", "the-one-owner")
+        .env("GITHUB_REPOSITORY", "paiml/xpile")
+        .env("GITHUB_SERVER_URL", "https://github.com")
+        .env("GITHUB_RUN_ID", "4242")
+        .env("GITHUB_SHA", "0123abcd")
+        .env_remove("GH_TOKEN")
+        .status()
+        .expect("bash runs");
+    let calls = std::fs::read_to_string(&log)
+        .unwrap_or_default()
+        .lines()
+        .map(str::to_string)
+        .collect();
+    let _ = std::fs::remove_dir_all(&dir);
+    (status.code().unwrap_or(-1), calls)
+}
+
+#[test]
+fn the_issue_script_refuses_every_event_but_schedule() {
+    for event in [
+        "pull_request",
+        "merge_group",
+        "push",
+        "workflow_dispatch",
+        "",
+    ] {
+        let (rc, calls) = run_action(event, "", 0);
+        assert_ne!(
+            rc, 0,
+            "event {event:?}: the night-issue script must refuse, exited 0"
+        );
+        assert!(
+            calls.is_empty(),
+            "event {event:?}: gh was called before the refusal: {calls:?}"
+        );
+    }
+}
+
+#[test]
+fn an_open_issue_with_the_exact_title_is_commented_not_duplicated() {
+    let listed = "7\tnight: kani red on main (old)\n41\tnight: kani red on main\n";
+    let (rc, calls) = run_action("schedule", listed, 0);
+    assert_eq!(rc, 0, "calls: {calls:?}");
+    assert!(
+        calls.iter().any(|c| c.starts_with("issue comment 41 ")),
+        "no comment on #41: {calls:?}"
+    );
+    assert!(
+        !calls.iter().any(|c| c.starts_with("issue create")),
+        "created a second issue although #41 is open: {calls:?}"
+    );
+    assert!(
+        calls.iter().any(|c| c.contains("/actions/runs/4242")),
+        "run url not posted: {calls:?}"
+    );
+}
+
+#[test]
+fn a_near_miss_title_is_not_the_issue_so_one_is_created_for_the_one_owner() {
+    let (rc, calls) = run_action("schedule", "7\tnight: kani red on main (old)\n", 0);
+    assert_eq!(rc, 0, "calls: {calls:?}");
+    let created: Vec<&String> = calls
+        .iter()
+        .filter(|c| c.starts_with("issue create"))
+        .collect();
+    assert_eq!(created.len(), 1, "expected exactly one create: {calls:?}");
+    assert!(
+        created[0].contains("--title night: kani red on main --assignee the-one-owner "),
+        "create is not titled/assigned as specified: {}",
+        created[0]
+    );
+    assert!(
+        !calls.iter().any(|c| c.starts_with("issue comment")),
+        "{calls:?}"
+    );
+}
+
+#[test]
+fn a_failed_lookup_fails_the_step_and_creates_nothing() {
+    let (rc, calls) = run_action("schedule", "", 1);
+    assert_ne!(
+        rc, 0,
+        "a failed `gh issue list` must fail the step: {calls:?}"
+    );
+    assert!(
+        !calls
+            .iter()
+            .any(|c| c.starts_with("issue create") || c.starts_with("issue comment")),
+        "acted on a lookup that failed: {calls:?}"
     );
 }
