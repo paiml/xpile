@@ -27457,3 +27457,22 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
   - kind:code
   notes: null
   epic: 2124
+- id: PMAT-2175
+  github_issue: 2175
+  item_type: task
+  title: 'docs: RELEASE.md §5 step 2 reads the latest scheduled nightly on the pinned SHA; dispatch only if none'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-10-15T04:03:01Z
+  updated: 2026-10-15T04:03:01Z
+  spec: null
+  acceptance_criteria:
+  - 'RELEASE.md §5 step 2 dispatches ci.yml and waits for the run. Since #2167 ci runs nightly on main, so read the latest scheduled run whose head_sha is the pinned SHA first, and dispatch (then wait) only if there is none. Docs only, plus any test pinning RELEASE.md facts.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:docs
+  notes: null
+  epic: 2124
