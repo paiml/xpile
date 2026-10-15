@@ -82,9 +82,10 @@ jobs:
   #   13878864 "Green Main — unified gate enforcement"      -> gate
   #   19814559 "workspace-test — repos that emit it (…)"    -> workspace-test
   # So the merge-blocking set is {gate, workspace-test} as the UNION over both.
-  # Every OTHER job in this file is ADVISORY: it runs on every PR and goes red
-  # on a real regression, but a red advisory job does NOT block a merge. Do not
-  # describe them as merge-blocking.
+  # Every OTHER job in this file is ADVISORY: it goes red on a real regression,
+  # but a red advisory job does NOT block a merge, so since PMAT-2170 it runs
+  # only at night (TWO-STATE CI, below the markers). Do not describe them as
+  # merge-blocking.
   #
   # ⛔ NEVER CITE ONE RULESET ID AS THE SOURCE OF THAT SET. Until PMAT-1501 this
   # note read
@@ -141,6 +142,20 @@ jobs:
   # + `lake-build` as required is an ORG-ADMIN action and is OWNER-GATED (the
   # repo-level rulesets endpoint 404s for an org-sourced ruleset); it is
   # recorded as the `ruleset-reflip` owner decision, not as a task.
+  #
+  # TWO-STATE CI (PMAT-2170, row C3 of release-v0.1.619-plan.md). A check that
+  # cannot block a merge does not run on the pull-request path. Every ADVISORY
+  # job in the marker line above carries exactly the job-level
+  #   if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+  # so it runs only on the nightly schedule and on a manual dispatch (RELEASE.md
+  # §5 step 2 dispatches ci on the pinned SHA). A red there opens or updates one
+  # issue with one owner and never holds a merge or a tag. The REQUIRED jobs
+  # carry no job-level `if:` and need no night job. Making a night job blocking
+  # is the owner's ruling (plan row L4). Pinned by
+  # `crates/xpile/tests/night_checks_off_pr_path.rs` (XPILE-NIGHT-CHECKS-001),
+  # which reads the ADVISORY marker, so a job listed there must be night-only,
+  # and which also requires the `schedule:` and `workflow_dispatch:` triggers in
+  # `on:` (PMAT-2166), without which a night job never runs at all.
   workspace-test:
     name: workspace-test
     runs-on: ubuntu-latest
@@ -221,6 +236,7 @@ jobs:
   # XPILE-QUORUM-003 / PMAT-021.
   kani:
     name: kani
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -279,6 +295,7 @@ jobs:
   # NOT a required status check at the branch-protection layer (yet).
   lake-build:
     name: lake-build
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -319,6 +336,7 @@ jobs:
   # in and external-link checking is proven stable.
   docs:
     name: docs
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     env:
       # Pinned prebuilt musl binary: no `cargo install` (pmat needs rustc
@@ -359,6 +377,7 @@ jobs:
   # kani/lake-build/docs.
   wasi:
     name: wasi
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     env:
       # Pinned prebuilt release asset, mirroring the `docs` job's PMAT_VERSION
@@ -436,6 +455,7 @@ jobs:
   # an unrelated merge.
   lean-models:
     name: lean-models
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -480,6 +500,7 @@ jobs:
   # branch-protection layer (yet).
   shader-validate:
     name: shader-validate
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -523,6 +544,7 @@ jobs:
   # tree`. A tenth rejection, or a documented one vanishing, reds this job.
   license-scan:
     name: license-scan
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     env:
       # Turns the "cargo-deny is not installed" skip in

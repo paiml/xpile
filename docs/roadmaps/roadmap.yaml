@@ -27419,3 +27419,22 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
   labels:
   - kind:ci
   notes: 'Operator 2026-09-26: "ensure xpile is a nightly build". xpile had no scheduled workflow, so drift in the toolchain, crates.io or advisories on an idle main went unseen (compare depyler, whose nightly broke when provable-contracts-cli 0.4.0 dropped its binary).'
+- id: PMAT-2170
+  github_issue: 2170
+  item_type: task
+  title: 'PMAT-2170: two-state CI — the seven non-blocking ci.yml jobs run only on schedule and workflow_dispatch (C3 of epic #2124)'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-10-13T21:54:56Z
+  updated: 2026-10-13T21:54:56Z
+  spec: null
+  acceptance_criteria:
+  - 'Plan row C3 of docs/specifications/sub/release-v0.1.619-plan.md. Seven ci.yml jobs (kani, lake-build, docs, wasi, lean-models, shader-validate, license-scan) cannot block a merge; give each the job-level if: github.event_name == ''schedule'' || github.event_name == ''workflow_dispatch''. gate and workspace-test unchanged. Falsifier crates/xpile/tests/night_checks_off_pr_path.rs.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 2124
