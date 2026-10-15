@@ -27438,3 +27438,22 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
   - kind:code
   notes: null
   epic: 2124
+- id: PMAT-2174
+  github_issue: 2174
+  item_type: task
+  title: 'ci: a red night check opens or updates its one issue (night-issue step)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-10-15T04:02:46Z
+  updated: 2026-10-15T04:02:46Z
+  spec: null
+  acceptance_criteria:
+  - ci.yml says a night red opens or updates one issue with one owner, but no step does it. Add a failure()+schedule-only final step to every advisory job that finds its issue by exact title, comments if open, else creates it with one assignee; never on pull_request/merge_group; never changes a job result. Pinned by night_checks_off_pr_path.rs.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 2124
