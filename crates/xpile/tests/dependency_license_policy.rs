@@ -38,9 +38,9 @@
 //!    `NOTICE.md` is "this copyleft library is linked into what we ship"; a
 //!    later edit that quietly downgrades it to `dev-only` reds here.
 //! 4. The `license-scan` job exists, runs the check, and its *tripwire* step is
-//!    not `continue-on-error`. Its raw-report step deliberately is — see the
-//!    job comment — and a gate that let the tripwire go the same way would be
-//!    decorative.
+//!    not `continue-on-error`: a gate that let the tripwire ignore its exit
+//!    code would be decorative. (Since PMAT-2177 the raw `cargo deny` step is
+//!    not either; `night_checks_off_pr_path.rs` pins that for every night job.)
 //!
 //! **LIVE half** — needs `cargo-deny` and `cargo`. Skips with a printed reason
 //! when they are absent; `XPILE_REQUIRE_DENY=1` (set on the `license-scan` job)
@@ -388,10 +388,9 @@ fn the_notice_states_derive_commands_and_no_bare_counts() {
 }
 
 /// A job that reports and a job whose verdict means something are different
-/// things. The raw `cargo deny` step is `continue-on-error` on purpose (it
-/// exits 4 today and a permanently-red advisory job is invisible — `wasi` was
-/// RED on the SHA tagged v0.1.617 and the release was cut anyway). The drift
-/// tripwire must NOT be, or the whole job is decorative.
+/// things. The drift tripwire must NOT be `continue-on-error`, or the whole
+/// job is decorative. (The raw `cargo deny` step was, until PMAT-2177; no step
+/// of a night job may be now, see `night_checks_off_pr_path.rs`.)
 #[test]
 fn the_license_scan_job_runs_the_check_and_its_tripwire_can_fail() {
     let ci = read(CI);
@@ -424,7 +423,7 @@ fn the_license_scan_job_runs_the_check_and_its_tripwire_can_fail() {
         !tripwire.contains("continue-on-error"),
         "the `license-scan` tripwire step is `continue-on-error`, which makes \
          the whole job decorative: it would stay green through any drift it is \
-         supposed to catch. Only the RAW report step may ignore its exit code."
+         supposed to catch."
     );
 }
 

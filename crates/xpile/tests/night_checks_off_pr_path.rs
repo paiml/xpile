@@ -24,7 +24,9 @@
 //!    would skip the gate);
 //! 4. every `continue-on-error` in the workflow sits inside a job that carries
 //!    [`NIGHT_IF`] (being listed as advisory is not enough), so
-//!    none is left on the pull-request path.
+//!    none is left on the pull-request path; and (PMAT-2177) no night job,
+//!    nor any step in one, carries `continue-on-error` either, so a red
+//!    night step fails its job and reaches the issue step of assertion 6.
 //! 5. the workflow triggers on `schedule` and on `workflow_dispatch`, so the
 //!    night condition can come true: a night job in a workflow with no night
 //!    trigger never runs, and that is a check turned off, not moved (#2167
@@ -42,7 +44,9 @@
 //!
 //! RED arm, recorded in the PR: on the tree before PMAT-2170 (no `if:` on the
 //! seven jobs) assertion 1 fails for all seven and assertion 4 fails for
-//! `license-scan`'s raw report step.
+//! `license-scan`'s raw report step. On the tree before PMAT-2177 (850ffff6)
+//! `no_step_in_a_night_job_has_continue_on_error` fails, naming exactly
+//! `license-scan`'s `cargo deny check licenses bans sources` step.
 
 use std::collections::BTreeSet;
 use std::path::PathBuf;
@@ -174,6 +178,42 @@ fn no_continue_on_error_is_left_on_the_pull_request_path() {
         found.is_empty(),
         "`continue-on-error` on the pull-request path is a third state (a check \
          that runs and cannot fail); move it to a night job or remove it:\n  {}",
+        found.join("\n  ")
+    );
+}
+
+/// PMAT-2177: moving a `continue-on-error` step to the night does not make it
+/// two-state. It still runs and cannot fail, so a red there neither fails the
+/// night job nor reaches the `night-issue` step (`failure()` never comes
+/// true). Every step of a night job can fail its job; so can the job itself.
+#[test]
+fn no_step_in_a_night_job_has_continue_on_error() {
+    let y = ci_yaml();
+    let jobs = y["jobs"].as_mapping().expect("ci.yml has a jobs: mapping");
+    let night = marker_set(ADVISORY_MARKER);
+    let mut found = Vec::new();
+    for (id, j) in jobs {
+        let id = id.as_str().unwrap_or_default().to_string();
+        // A night job is one listed as advisory OR one carrying the night
+        // condition; either way its red is meant to file the one issue.
+        let is_night = night.contains(&id) || j["if"].as_str().map(str::trim) == Some(NIGHT_IF);
+        if !is_night {
+            continue;
+        }
+        if !j["continue-on-error"].is_null() {
+            found.push(format!("{id} (job level)"));
+        }
+        for step in j["steps"].as_sequence().into_iter().flatten() {
+            if !step["continue-on-error"].is_null() {
+                let name = step["name"].as_str().unwrap_or("<unnamed step>");
+                found.push(format!("{id}: {name}"));
+            }
+        }
+    }
+    assert!(
+        found.is_empty(),
+        "`continue-on-error` in a night job is a third state (C324 #6): the step \
+         runs, cannot fail its job, and so never files the night issue; remove it:\n  {}",
         found.join("\n  ")
     );
 }

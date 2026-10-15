@@ -612,18 +612,20 @@ jobs:
   # build-only (tiny-keccak, a rustpython-parser build script). Every one is
   # enumerated with its linkage in `NOTICE.md`.
   #
-  # WHY THE RAW CHECK IS `continue-on-error` AND THE TRIPWIRE IS NOT:
-  # what to DO about the LGPL is an OWNER DECISION (`lgpl-in-shipped-binary`
-  # in docs/roadmaps/queue.yaml), not a decision this job may make. A job whose
-  # verdict is "still 9 rejections" would be red on every commit forever, and
-  # this repo has already recorded what that buys: `wasi` was RED on ccb95a04,
-  # the exact SHA tagged v0.1.617, and the release was cut anyway (PMAT-1370).
-  # A permanently-red advisory job is exactly as invisible as no job at all.
-  # So the raw check RUNS and its full output is in the log every time, while
-  # the job's PASS/FAIL verdict is the DRIFT tripwire below: the set of
-  # rejected (crate, version, license) triples must equal the set NOTICE.md
-  # enumerates, and each row's `linkage:` claim is re-derived from `cargo
-  # tree`. A tenth rejection, or a documented one vanishing, reds this job.
+  # TWO STEPS, BOTH ABLE TO FAIL THE JOB (PMAT-2177). This is a night-only
+  # LAB job: it is not in REQUIRED-CONTEXTS and never runs on a pull request
+  # or a merge group, so neither step can block a merge or a release. The
+  # DRIFT tripwire checks that the set of rejected (crate, version, license)
+  # triples equals the set NOTICE.md enumerates, and re-derives each row's
+  # `linkage:` claim from `cargo tree`: a tenth rejection, or a documented one
+  # vanishing, reds it. The raw `cargo deny check licenses bans sources` step
+  # then reds the job on ANY finding, the documented nine included. What to DO
+  # about the LGPL is an OWNER DECISION (`lgpl-in-shipped-binary` in
+  # docs/roadmaps/queue.yaml), not one this job may make, so it does not hide
+  # the finding behind `continue-on-error` (a check that runs and cannot fail
+  # is a third state, C324 #6): the red night opens or updates the ONE
+  # `night: license-scan red on main` issue through the last step, and that
+  # issue stays open until the owner decides.
   license-scan:
     name: license-scan
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
@@ -655,10 +657,9 @@ jobs:
       - name: drift tripwire — NOTICE.md equals the live rejection set
         run: cargo test -p xpile --test dependency_license_policy -- --nocapture
 
-      - name: report — cargo deny check licenses bans sources (advisory)
-        # Exits 4 today BY DESIGN; see the block comment above. The output is
-        # the point, not the exit code.
-        continue-on-error: true
+      - name: cargo deny check licenses bans sources
+        # Exits 4 on main today (the nine NOTICE.md rejections), so the night
+        # job is red and files its one issue; see the block comment above.
         run: cargo deny check licenses bans sources
 
       # PMAT-2174: the one issue a red night opens or updates. LAST step, so
