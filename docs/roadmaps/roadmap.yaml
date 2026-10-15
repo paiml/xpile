@@ -27381,6 +27381,44 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
   labels:
   - kind:code
   notes: 'Epic #2125 (v0.1.620), row 5. Pilot: C-PY-INT-ARITH (Sem 42 -> 3) and C-BASHRS-POSIX-IDEMPOTENCE (18 -> 1); statuses unchanged, 26 QUORUM / 9 PARTIAL.'
+- id: PMAT-2172
+  github_issue: 2172
+  item_type: task
+  title: 'PMAT-2172: RUSTSEC-2024-0449 (unsafe-libyaml via serde_yaml 0.9) turned ci / gate red on main — a dated, ledgered exemption under the PMAT-2120 expiry gate'
+  status: inprogress
+  priority: critical
+  assigned_to: null
+  created: 2026-10-15T00:39:16Z
+  updated: 2026-10-15T00:39:16Z
+  spec: null
+  acceptance_criteria:
+  - 'deny.toml ignores RUSTSEC-2024-0449 and docs/audits/advisory-ignores.yaml carries its entry (crate unsafe-libyaml, owner, owner_ticket PMAT-2172, removed_by inside max_window_days); cargo deny check advisories exits 0 on the tree and exits 1 with that one ignore removed; advisory_expiry.rs passes with XPILE_REQUIRE_CARGO_DENY set.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'Removal (closes the exemption): move xpile, xpile-contracts and xpile-forjar-codegen off serde_yaml 0.9 and take an aprender-contracts release that does not depend on it. Issue #2172.'
+  epic: 2124
+- id: PMAT-2166
+  github_issue: 2166
+  item_type: task
+  title: "ci: run the full ci workflow nightly on main"
+  status: inprogress
+  priority: medium
+  assigned_to: null
+  created: 2026-09-26T16:10:32Z
+  updated: 2026-09-26T16:10:32Z
+  spec: null
+  acceptance_criteria:
+  - ci.yml runs on a nightly schedule and on workflow_dispatch, in addition to push/pull_request
+  - the scheduled run executes every ci job against main unchanged
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:ci
+  notes: 'Operator 2026-09-26: "ensure xpile is a nightly build". xpile had no scheduled workflow, so drift in the toolchain, crates.io or advisories on an idle main went unseen (compare depyler, whose nightly broke when provable-contracts-cli 0.4.0 dropped its binary).'
 - id: PMAT-2170
   github_issue: 2170
   item_type: task

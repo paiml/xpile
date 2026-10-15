@@ -1,0 +1,295 @@
+{
+  "ticket": "PMAT-2166",
+  "base": "origin/main",
+  "base_resolved": "origin/main",
+  "base_note": "no origin/origin/main exists; judged against the local ref",
+  "head": "6d81cd44441536ce803d9d27bf2532aa90c8bb34",
+  "diff_sha256": "640a1fc41a775e5aa9efe5c88c8b2dc86b03957d78d0bfb00aae6a7356a64ec6",
+  "width": 3,
+  "executor": "agy",
+  "prompt_mode": "inline",
+  "prompt_bytes": 3046,
+  "prompt_sha256": "67292230c7d67eba79a1c38098b20d73a7a9388c11c4575e697e6d2fa77aeefb",
+  "author": {
+    "model": "claude-opus-5-5",
+    "family": "claude",
+    "source": "flag"
+  },
+  "agreed": true,
+  "lanes": [
+    {
+      "lane": 1,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff successfully implements PMAT-2166. It adds a `schedule` trigger for a nightly run (`cron: '23 6 * * *'`) and a `workflow_dispatch` trigger to `.github/workflows/ci.yml`. The existing `pull_request` and `push` triggers on `main` are preserved. None of the job definitions are modified, so the scheduled run executes every CI job against `main` unchanged, exactly as requested by the acceptance criteria. There is no evidence refuting the ticket's instructions or implementing forbidden changes.",
+      "findings": [],
+      "raw_bytes": 3062,
+      "err_bytes": 103,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "role": "independent",
+      "model": "gemini-3.1-pro-high",
+      "model_measured": "gemini-3.1-pro-high",
+      "model_source": "measured",
+      "family": "gemini",
+      "executor": "agy",
+      "brief_sha256": "67292230c7d67eba79a1c38098b20d73a7a9388c11c4575e697e6d2fa77aeefb",
+      "trace": {
+        "input_sha256": "5a885757a34d285e9095ebaf63b1a7632dad0de9c3dc4f950be2d4358c947518",
+        "output_sha256": "1903cf0fda5108db3f87f971310ceadf60cf31ce8ba7e512ef56eec2619176a8",
+        "store": null,
+        "store_why": "almacen not provisioned yet (infra-27): the blobs stay in the round's gitignored .lanes dir"
+      },
+      "fallback": {
+        "judged_by": "gemini-3.1-pro-high",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gemini-3.1-pro-high",
+            "family": "gemini",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    },
+    {
+      "lane": 2,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff satisfies all acceptance criteria. It adds a nightly schedule (`cron: '23 6 * * *'`) and `workflow_dispatch` triggers to `.github/workflows/ci.yml`. Since no job-level `if:` conditions or event filters were added, every CI job will run unchanged against the main branch on this schedule. The addition of the ticket to `docs/roadmaps/roadmap.yaml` is standard project bookkeeping and does not violate any ticket constraints. No tests or gates are weakened.",
+      "findings": [],
+      "raw_bytes": 2292,
+      "err_bytes": 103,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "role": "independent",
+      "model": "gemini-3.1-pro-high",
+      "model_measured": "gemini-3.1-pro-high",
+      "model_source": "measured",
+      "family": "gemini",
+      "executor": "agy",
+      "brief_sha256": "67292230c7d67eba79a1c38098b20d73a7a9388c11c4575e697e6d2fa77aeefb",
+      "trace": {
+        "input_sha256": "993969a451150dc7af56ccc2e6a3c2098adfcaba8eca043e4877c0f1c834e313",
+        "output_sha256": "9275d572e2ccfd266fb6ef53857c8d0a8e78d9d7bc18d93d45ef02ef431e7224",
+        "store": null,
+        "store_why": "almacen not provisioned yet (infra-27): the blobs stay in the round's gitignored .lanes dir"
+      },
+      "fallback": {
+        "judged_by": "gemini-3.1-pro-high",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gemini-3.1-pro-high",
+            "family": "gemini",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": [
+          {
+            "model": "claude-opus-4-6-thinking",
+            "why": "family claude quota-exhausted (429, first seen on the pre-check probe of claude-opus-4-6-thinking)"
+          }
+        ]
+      }
+    },
+    {
+      "lane": 3,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "PMAT-2166 diff correctly adds nightly schedule and workflow_dispatch triggers to ci.yml while preserving existing push/pull_request triggers. Cron syntax is valid, jobs run unchanged on main, and roadmap entry documents the change. All acceptance criteria met.",
+      "findings": [],
+      "raw_bytes": 1437,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "executor": "claude-code",
+      "grounding_check": "parity",
+      "role": "counted",
+      "model": "claude-haiku-4-5",
+      "model_measured": "claude-haiku-4-5",
+      "model_source": "flag",
+      "family": "claude",
+      "brief_sha256": "67292230c7d67eba79a1c38098b20d73a7a9388c11c4575e697e6d2fa77aeefb",
+      "trace": {
+        "input_sha256": "f7b1629706dc3013a32a5c9378f69f3a8b27ac83b6f487b9599b15cb3433e38b",
+        "output_sha256": "144c0d59f325b14795fc12564a199ee23550999ad70489431f4e5d2228ff8271",
+        "store": null,
+        "store_why": "almacen not provisioned yet (infra-27): the blobs stay in the round's gitignored .lanes dir"
+      },
+      "fallback": {
+        "judged_by": "claude-haiku-4-5",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "claude-haiku-4-5",
+            "family": "claude",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    }
+  ],
+  "dissent": [],
+  "dedup": [],
+  "uncovered": [],
+  "coverage_source": "lanes",
+  "partial": false,
+  "partial_reasons": [
+    "lane models: only 2 distinct model ids across 3 lanes (claude-haiku-4-5, gemini-3.1-pro-high) — lanes sharing an id are resamples, not independent reviewers (PMAT-125)",
+    "lane 2: judged by gemini-3.1-pro-high after falling through claude-opus-4-6-thinking (skipped: family claude quota-exhausted (429, first seen on the pre-check probe of claude-opus-4-6-thinking)) (PMAT-321)"
+  ],
+  "fallback": {
+    "same_family_width": 2,
+    "chain": [
+      {
+        "model": "gemini-3.1-pro-high",
+        "family": "gemini",
+        "disposition": "configured"
+      },
+      {
+        "model": "claude-opus-4-6-thinking",
+        "family": "claude",
+        "disposition": "configured"
+      },
+      {
+        "model": "claude-haiku-4-5",
+        "family": "claude",
+        "disposition": "claude-code",
+        "why": "run by Claude Code on its own budget: a configured seat runs every round, a fallback step only when every non-Claude family is measured out (PMAT-360, operator standing rule)"
+      },
+      {
+        "model": "claude-sonnet-5",
+        "family": "claude",
+        "disposition": "claude-code",
+        "why": "run by Claude Code on its own budget: a configured seat runs every round, a fallback step only when every non-Claude family is measured out (PMAT-360, operator standing rule)"
+      },
+      {
+        "model": "claude-opus-5-5",
+        "family": "claude",
+        "disposition": "excluded-self-review",
+        "why": "the author's own model id (claude-opus-5-5) — a model never reviews its own diff, at any width (R-15a identity bar)"
+      },
+      {
+        "model": "qwen3.5",
+        "family": "qwen",
+        "disposition": "not-run",
+        "why": "no quorum.local_lane in the config — the aprender lane has no model to load"
+      }
+    ],
+    "precheck": [
+      {
+        "family": "gemini",
+        "model": "gemini-3.1-pro-high",
+        "probe": 1,
+        "outcome": "live"
+      },
+      {
+        "family": "claude",
+        "model": "claude-opus-4-6-thinking",
+        "probe": 1,
+        "outcome": "quota",
+        "reason": "API error (attempt 4): RESOURCE_EXHAUSTED (code 429): Individual quota reached. Please upgrade your subscription to increase your limits. Resets in 17h3m42s."
+      }
+    ],
+    "degraded": null,
+    "prah": {
+      "source": "install-receipt",
+      "path": "/home/noah/.claude/skills/paiml-implement/bin/prah"
+    },
+    "bucket": {
+      "ledger": "/home/noah/.local/state/paiml-implement/agy-bucket.jsonl",
+      "window_s": 18000,
+      "pace": "off",
+      "buckets": {
+        "claude-gpt": {
+          "bucket": "claude-gpt",
+          "budget": 0,
+          "basis": "ledger: the calls served before the first 429 of the latest window that reached one",
+          "window_start": 1790441585,
+          "window_calls": 1,
+          "window_429": 1,
+          "hour_calls": 3,
+          "share": 1,
+          "want": 2,
+          "state": "empty",
+          "reason": "agy bucket claude-gpt is empty: a 429 in this window (started 2026-09-26T16:53:05Z)"
+        },
+        "gemini": {
+          "bucket": "gemini",
+          "budget": 67,
+          "basis": "[U] default 30, raised to the 67 calls a window has made without a 429; no window reached one",
+          "window_start": 1790441558,
+          "window_calls": 7,
+          "window_429": 0,
+          "hour_calls": 15,
+          "share": 13,
+          "want": 2,
+          "state": "hour",
+          "reason": "agy bucket gemini: 15 calls in the last hour + 2 this round exceed the hour share 13 (1/5 of the budget 67, [U] default 30, raised to the 67 calls a window has made without a 429; no window reached one)"
+        }
+      },
+      "closed": []
+    }
+  },
+  "auto_merge": {
+    "checked": true,
+    "was_armed": false,
+    "disarmed": false,
+    "note": "auto-merge not armed"
+  },
+  "cheap_seat": "claude-haiku-4-5",
+  "canary": {
+    "shape": "canary",
+    "max_brief_bytes": 24576,
+    "brief_bytes": 3046
+  },
+  "advisory_lane": {
+    "state": "unavailable",
+    "counts": false,
+    "row": {
+      "NotRun": "Busy"
+    },
+    "verdict": "unavailable",
+    "why": "no host answered inside the budget",
+    "served_by": null,
+    "gpu_proof": null,
+    "apr": null,
+    "model": null,
+    "model_sha256": null,
+    "rc": 2,
+    "wall_s": 0,
+    "collected_s": 1578,
+    "budget_s": 300,
+    "budget_basis": "[U] 300 s: fewer than 10 gx10-cuda Verdict rows in the ledger",
+    "brief": {
+      "bytes": 3046,
+      "sent_bytes": 3215,
+      "max_bytes": 24576
+    },
+    "trace": {
+      "input_sha256": "0cf4fce5fb0d1ca322c6aeba1b173b08eac1cc431f231260c31b3370e3440e5e",
+      "raw": "advisory.json"
+    },
+    "attempts": [
+      {
+        "host": "gx10",
+        "ok": false,
+        "wall_s": 0,
+        "error": "busy: executor yielded (unit inactive; last yield: 2026-09-25T20:18:53Z host=gx10-a5b5 event=stopped gpu-priority lock=/tmp/apr-gpu.priority)"
+      }
+    ],
+    "ledger": "/home/noah/.local/state/paiml-implement/advisory-ledger.jsonl",
+    "raw": "advisory.json",
+    "agrees_with_counted": null,
+    "counted": "PASS"
+  },
+  "lint": {
+    "ok": true,
+    "output": "receipt complete: kind=artifact lanes=3 author=claude-opus-5-5/claude same_family=1/2"
+  }
+}
