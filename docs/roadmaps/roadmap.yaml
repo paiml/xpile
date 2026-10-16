@@ -27381,3 +27381,98 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
   labels:
   - kind:code
   notes: 'Epic #2125 (v0.1.620), row 5. Pilot: C-PY-INT-ARITH (Sem 42 -> 3) and C-BASHRS-POSIX-IDEMPOTENCE (18 -> 1); statuses unchanged, 26 QUORUM / 9 PARTIAL. Done (v0.1.619 plan row C1): merged as d7b8681546641d92a694fe185f2d2e6ff86e3da1 (PR #2164), an ancestor of origin/main; issue #2163 closed.'
+- id: PMAT-2172
+  github_issue: 2172
+  item_type: task
+  title: 'PMAT-2172: RUSTSEC-2024-0449 (unsafe-libyaml via serde_yaml 0.9) turned ci / gate red on main — a dated, ledgered exemption under the PMAT-2120 expiry gate'
+  status: inprogress
+  priority: critical
+  assigned_to: null
+  created: 2026-10-15T00:39:16Z
+  updated: 2026-10-15T00:39:16Z
+  spec: null
+  acceptance_criteria:
+  - 'deny.toml ignores RUSTSEC-2024-0449 and docs/audits/advisory-ignores.yaml carries its entry (crate unsafe-libyaml, owner, owner_ticket PMAT-2172, removed_by inside max_window_days); cargo deny check advisories exits 0 on the tree and exits 1 with that one ignore removed; advisory_expiry.rs passes with XPILE_REQUIRE_CARGO_DENY set.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'Removal (closes the exemption): move xpile, xpile-contracts and xpile-forjar-codegen off serde_yaml 0.9 and take an aprender-contracts release that does not depend on it. Issue #2172.'
+  epic: 2124
+- id: PMAT-2166
+  github_issue: 2166
+  item_type: task
+  title: "ci: run the full ci workflow nightly on main"
+  status: inprogress
+  priority: medium
+  assigned_to: null
+  created: 2026-09-26T16:10:32Z
+  updated: 2026-09-26T16:10:32Z
+  spec: null
+  acceptance_criteria:
+  - ci.yml runs on a nightly schedule and on workflow_dispatch, in addition to push/pull_request
+  - the scheduled run executes every ci job against main unchanged
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:ci
+  notes: 'Operator 2026-09-26: "ensure xpile is a nightly build". xpile had no scheduled workflow, so drift in the toolchain, crates.io or advisories on an idle main went unseen (compare depyler, whose nightly broke when provable-contracts-cli 0.4.0 dropped its binary).'
+- id: PMAT-2170
+  github_issue: 2170
+  item_type: task
+  title: 'PMAT-2170: two-state CI — the seven non-blocking ci.yml jobs run only on schedule and workflow_dispatch (C3 of epic #2124)'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-10-13T21:54:56Z
+  updated: 2026-10-13T21:54:56Z
+  spec: null
+  acceptance_criteria:
+  - 'Plan row C3 of docs/specifications/sub/release-v0.1.619-plan.md. Seven ci.yml jobs (kani, lake-build, docs, wasi, lean-models, shader-validate, license-scan) cannot block a merge; give each the job-level if: github.event_name == ''schedule'' || github.event_name == ''workflow_dispatch''. gate and workspace-test unchanged. Falsifier crates/xpile/tests/night_checks_off_pr_path.rs.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 2124
+- id: PMAT-2174
+  github_issue: 2174
+  item_type: task
+  title: 'ci: a red night check opens or updates its one issue (night-issue step)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-10-15T04:02:46Z
+  updated: 2026-10-15T04:02:46Z
+  spec: null
+  acceptance_criteria:
+  - ci.yml says a night red opens or updates one issue with one owner, but no step does it. Add a failure()+schedule-only final step to every advisory job that finds its issue by exact title, comments if open, else creates it with one assignee; never on pull_request/merge_group; never changes a job result. Pinned by night_checks_off_pr_path.rs.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 2124
+- id: PMAT-2175
+  github_issue: 2175
+  item_type: task
+  title: 'docs: RELEASE.md §5 step 2 reads the latest scheduled nightly on the pinned SHA; dispatch only if none'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-10-15T04:03:01Z
+  updated: 2026-10-15T04:03:01Z
+  spec: null
+  acceptance_criteria:
+  - 'RELEASE.md §5 step 2 dispatches ci.yml and waits for the run. Since #2167 ci runs nightly on main, so read the latest scheduled run whose head_sha is the pinned SHA first, and dispatch (then wait) only if there is none. Docs only, plus any test pinning RELEASE.md facts.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:docs
+  notes: null
+  epic: 2124

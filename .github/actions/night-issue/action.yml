@@ -1,0 +1,69 @@
+name: night-issue
+description: >
+  A red night check opens or updates its ONE issue (PMAT-2174). Called as the
+  LAST step of every night-only (advisory) job in ci.yml, under
+  `if: failure() && github.event_name == 'schedule'`, so it runs only after
+  that job has already failed on a scheduled run. It finds the open issue
+  titled exactly `night: <check> red on main`; if there is one it comments the
+  run on it, otherwise it creates it assigned to the one owner. It cannot turn
+  a red job green (the job has already failed) and it never runs on
+  pull_request, merge_group, push or workflow_dispatch: the script refuses any
+  event but `schedule` before it calls gh. Pinned by
+  crates/xpile/tests/night_checks_off_pr_path.rs (XPILE-NIGHT-CHECKS-001).
+
+inputs:
+  check:
+    description: The ci.yml job id of the night check that failed.
+    required: true
+  owner:
+    description: >
+      The ONE owner (a GitHub login) a new night issue is assigned to. One
+      login, never a list: a ticket with two owners has none.
+    required: false
+    default: noahgift
+
+runs:
+  using: composite
+  steps:
+    - name: open or update the night issue
+      shell: bash
+      env:
+        GH_TOKEN: ${{ github.token }}
+        CHECK: ${{ inputs.check }}
+        OWNER: ${{ inputs.owner }}
+      run: |
+        set -euo pipefail
+        if [ "${GITHUB_EVENT_NAME:-}" != "schedule" ]; then
+          echo "night-issue: refusing on event '${GITHUB_EVENT_NAME:-}': only a scheduled run files a night issue" >&2
+          exit 2
+        fi
+        : "${CHECK:?night-issue: no check named}"
+        : "${OWNER:?night-issue: no owner named}"
+        title="night: ${CHECK} red on main"
+        run_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+        # Find by EXACT title. The search narrows, the comparison decides: a
+        # search hit whose title merely contains this one is not this issue.
+        # A failed list exits here (set -e), so an API error never becomes a
+        # duplicate issue.
+        found=$(gh issue list --repo "$GITHUB_REPOSITORY" --state open \
+          --search "\"${title}\" in:title" --limit 100 \
+          --json number,title --jq '.[] | "\(.number)\t\(.title)"')
+        number=""
+        while IFS=$'\t' read -r n t; do
+          if [ -n "$n" ] && [ "$t" = "$title" ]; then
+            number="$n"
+            break
+          fi
+        done <<< "$found"
+        if [ -n "$number" ]; then
+          gh issue comment "$number" --repo "$GITHUB_REPOSITORY" \
+            --body "Still red: \`${CHECK}\` failed again on the scheduled run ${run_url} (\`${GITHUB_SHA}\`)."
+          echo "night-issue: commented on #${number} (${title})"
+        else
+          gh issue create --repo "$GITHUB_REPOSITORY" --title "$title" \
+            --assignee "$OWNER" \
+            --body "The night check \`${CHECK}\` failed on the scheduled ci run ${run_url} (\`${GITHUB_SHA}\`).
+
+        This is the one issue for this check: later red nights comment here. A night check cannot block a merge or a release (it runs only on \`schedule\` and \`workflow_dispatch\`, PMAT-2170); this issue is its only output. Close it when the check is green again."
+          echo "night-issue: opened '${title}' for ${OWNER}"
+        fi

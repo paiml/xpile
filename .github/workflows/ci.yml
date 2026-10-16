@@ -4,6 +4,12 @@ on:
   pull_request:
   push:
     branches: [main]
+  # Nightly (PMAT-2166): re-run every job against main even when nothing
+  # merged, so drift in the stable toolchain, crates.io installs and the
+  # advisory DB goes red here instead of on the next unrelated PR.
+  schedule:
+    - cron: '23 6 * * *'
+  workflow_dispatch:
 
 env:
   CARGO_TERM_COLOR: always
@@ -76,9 +82,10 @@ jobs:
   #   13878864 "Green Main — unified gate enforcement"      -> gate
   #   19814559 "workspace-test — repos that emit it (…)"    -> workspace-test
   # So the merge-blocking set is {gate, workspace-test} as the UNION over both.
-  # Every OTHER job in this file is ADVISORY: it runs on every PR and goes red
-  # on a real regression, but a red advisory job does NOT block a merge. Do not
-  # describe them as merge-blocking.
+  # Every OTHER job in this file is ADVISORY: it goes red on a real regression,
+  # but a red advisory job does NOT block a merge, so since PMAT-2170 it runs
+  # only at night (TWO-STATE CI, below the markers). Do not describe them as
+  # merge-blocking.
   #
   # ⛔ NEVER CITE ONE RULESET ID AS THE SOURCE OF THAT SET. Until PMAT-1501 this
   # note read
@@ -135,6 +142,30 @@ jobs:
   # + `lake-build` as required is an ORG-ADMIN action and is OWNER-GATED (the
   # repo-level rulesets endpoint 404s for an org-sourced ruleset); it is
   # recorded as the `ruleset-reflip` owner decision, not as a task.
+  #
+  # TWO-STATE CI (PMAT-2170, row C3 of release-v0.1.619-plan.md). A check that
+  # cannot block a merge does not run on the pull-request path. Every ADVISORY
+  # job in the marker line above carries exactly the job-level
+  #   if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+  # so it runs only on the nightly schedule and on a manual dispatch (RELEASE.md
+  # §5 step 2 reads the latest scheduled run on the pinned SHA and dispatches ci
+  # only if there is none). A red there never holds a merge or a tag; on a
+  # scheduled run it opens or updates ONE issue with ONE owner (PMAT-2174): the
+  # LAST step of every night job is
+  #   if: failure() && github.event_name == 'schedule'
+  #   uses: ./.github/actions/night-issue   (with: check: <job id>)
+  # which comments on the open issue titled exactly `night: <job id> red on main`
+  # or creates it, assigned to the action's one `owner` input. It runs only
+  # after its job has already failed, so it cannot change a job's result, and
+  # it refuses any event but `schedule`, so a pull request, a merge group or a
+  # manual dispatch files nothing. The night jobs carry `issues: write` for
+  # it. The REQUIRED jobs
+  # carry no job-level `if:` and need no night job. Making a night job blocking
+  # is the owner's ruling (plan row L4). Pinned by
+  # `crates/xpile/tests/night_checks_off_pr_path.rs` (XPILE-NIGHT-CHECKS-001),
+  # which reads the ADVISORY marker, so a job listed there must be night-only,
+  # and which also requires the `schedule:` and `workflow_dispatch:` triggers in
+  # `on:` (PMAT-2166), without which a night job never runs at all.
   workspace-test:
     name: workspace-test
     runs-on: ubuntu-latest
@@ -215,7 +246,11 @@ jobs:
   # XPILE-QUORUM-003 / PMAT-021.
   kani:
     name: kani
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
     steps:
       - uses: actions/checkout@v4
 
@@ -255,6 +290,15 @@ jobs:
           XPILE_REQUIRE_KANI: "1"
         run: cargo test -p xpile --test kani_verify -- --nocapture
 
+      # PMAT-2174: the one issue a red night opens or updates. LAST step, so
+      # failure() covers every step above it; schedule only, so a manual
+      # dispatch (RELEASE.md §5 step 2) files nothing.
+      - name: night issue — open or update the one issue for this check
+        if: failure() && github.event_name == 'schedule'
+        uses: ./.github/actions/night-issue
+        with:
+          check: kani
+
   # ── Optional check: lake-build (Proof lane / PMAT-903) ────────
   # Elaborates the machine-checked PILOT set in `contracts/lean/`
   # via `lake build` against the pinned `lean-toolchain` (v4.15.0).
@@ -273,7 +317,11 @@ jobs:
   # NOT a required status check at the branch-protection layer (yet).
   lake-build:
     name: lake-build
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
     steps:
       - uses: actions/checkout@v4
 
@@ -296,6 +344,15 @@ jobs:
         working-directory: contracts/lean
         run: lake build
 
+      # PMAT-2174: the one issue a red night opens or updates. LAST step, so
+      # failure() covers every step above it; schedule only, so a manual
+      # dispatch (RELEASE.md §5 step 2) files nothing.
+      - name: night issue — open or update the one issue for this check
+        if: failure() && github.event_name == 'schedule'
+        uses: ./.github/actions/night-issue
+        with:
+          check: lake-build
+
   # ── Optional check: docs (README/documentation quality) ───────
   # Grades and enforces the documentation with `pmat`:
   #   - validate-docs --fail-on-error : every relative + external
@@ -313,7 +370,11 @@ jobs:
   # in and external-link checking is proven stable.
   docs:
     name: docs
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
     env:
       # Pinned prebuilt musl binary: no `cargo install` (pmat needs rustc
       # ≥1.95 while this repo's toolchain is 1.93), no compile time, and a
@@ -344,6 +405,15 @@ jobs:
             exit 1
           }
 
+      # PMAT-2174: the one issue a red night opens or updates. LAST step, so
+      # failure() covers every step above it; schedule only, so a manual
+      # dispatch (RELEASE.md §5 step 2) files nothing.
+      - name: night issue — open or update the one issue for this check
+        if: failure() && github.event_name == 'schedule'
+        uses: ./.github/actions/night-issue
+        with:
+          check: docs
+
   # ── Optional check: wasi (universal-binary path) ──────────────
   # Proves the "works everywhere" claim end to end: xpile emits a proven model
   # as a buildable crate (`transpile --emit-crate`), that crate builds to a
@@ -353,7 +423,11 @@ jobs:
   # kani/lake-build/docs.
   wasi:
     name: wasi
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
     env:
       # Pinned prebuilt release asset, mirroring the `docs` job's PMAT_VERSION
       # pattern. PMAT-1370: this job used to run
@@ -418,6 +492,15 @@ jobs:
           fi
           echo "OK — the universal .wasm matches CPython byte-for-byte"
 
+      # PMAT-2174: the one issue a red night opens or updates. LAST step, so
+      # failure() covers every step above it; schedule only, so a manual
+      # dispatch (RELEASE.md §5 step 2) files nothing.
+      - name: night issue — open or update the one issue for this check
+        if: failure() && github.event_name == 'schedule'
+        uses: ./.github/actions/night-issue
+        with:
+          check: wasi
+
   # ── Optional check: lean-models (Mathlib model-proof lane / PMAT-956) ──
   # The deliberate, walled-off Mathlib lane: elaborates the OLS-uniqueness
   # certificate in `contracts/lean-models/` against Mathlib (fetched as prebuilt
@@ -430,7 +513,11 @@ jobs:
   # an unrelated merge.
   lean-models:
     name: lean-models
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
     steps:
       - uses: actions/checkout@v4
 
@@ -456,6 +543,15 @@ jobs:
         working-directory: contracts/lean-models
         run: lake build
 
+      # PMAT-2174: the one issue a red night opens or updates. LAST step, so
+      # failure() covers every step above it; schedule only, so a manual
+      # dispatch (RELEASE.md §5 step 2) files nothing.
+      - name: night issue — open or update the one issue for this check
+        if: failure() && github.event_name == 'schedule'
+        uses: ./.github/actions/night-issue
+        with:
+          check: lean-models
+
   # ── Optional check: shader-validate (offline WGSL+SPIR-V corpus / PMAT-482) ──
   # Converts the GPU-lane SKIP into a VALIDATED gate on free CI. `naga` is the
   # SINGLE shared oracle for the WGSL lane (front-end parse+validate) AND the
@@ -474,7 +570,11 @@ jobs:
   # branch-protection layer (yet).
   shader-validate:
     name: shader-validate
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
     steps:
       - uses: actions/checkout@v4
 
@@ -488,6 +588,15 @@ jobs:
 
       - name: offline WGSL naga-validate + WGSL->SPIR-V corpus (no GPU)
         run: cargo test -p xpile-spirv-codegen --test offline_validate -- --nocapture
+
+      # PMAT-2174: the one issue a red night opens or updates. LAST step, so
+      # failure() covers every step above it; schedule only, so a manual
+      # dispatch (RELEASE.md §5 step 2) files nothing.
+      - name: night issue — open or update the one issue for this check
+        if: failure() && github.event_name == 'schedule'
+        uses: ./.github/actions/night-issue
+        with:
+          check: shader-validate
 
   # ── license-scan (ADVISORY — PMAT-1409) ──────────────────────
   # deny.toml has configured `[licenses]`, `[bans]` and `[graph]` since the
@@ -517,7 +626,11 @@ jobs:
   # tree`. A tenth rejection, or a documented one vanishing, reds this job.
   license-scan:
     name: license-scan
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
     env:
       # Turns the "cargo-deny is not installed" skip in
       # dependency_license_policy.rs into a hard failure. Without this the
@@ -547,3 +660,12 @@ jobs:
         # the point, not the exit code.
         continue-on-error: true
         run: cargo deny check licenses bans sources
+
+      # PMAT-2174: the one issue a red night opens or updates. LAST step, so
+      # failure() covers every step above it; schedule only, so a manual
+      # dispatch (RELEASE.md §5 step 2) files nothing.
+      - name: night issue — open or update the one issue for this check
+        if: failure() && github.event_name == 'schedule'
+        uses: ./.github/actions/night-issue
+        with:
+          check: license-scan

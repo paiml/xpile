@@ -411,7 +411,23 @@ tier), which is where you should read it.
 
 1. **Re-verify A1** (§6). All preconditions, before the first upload byte.
 2. **Record the advisory statuses** on the pinned SHA and name every
-   non-success in the release body:
+   non-success in the release body. The advisory jobs run only on `schedule`
+   and `workflow_dispatch` (PMAT-2170), and `ci.yml` runs on `main` every
+   night (PMAT-2166), so on a frozen `main` (A7) the pinned SHA normally
+   already has a scheduled run. Read the latest one first (PMAT-2175):
+
+   ```bash
+   gh run list -R paiml/xpile --workflow ci.yml --event schedule \
+     --commit <PINNED_SHA> --limit 1 \
+     --json databaseId,status,conclusion,headSha,createdAt
+   ```
+
+   If it is `completed`, its statuses are the ones to record. If it is still
+   running, wait for it; do not dispatch a second run. **Dispatch only if
+   there is none** (empty output: no night has run on `<PINNED_SHA>` yet):
+   `gh workflow run ci.yml --ref main` while `main` is still `<PINNED_SHA>`
+   (A7), then wait for that run and check its `head_sha` is `<PINNED_SHA>`.
+   Either way, read the statuses from the commit:
 
    ```bash
    gh api "repos/paiml/xpile/commits/<PINNED_SHA>/check-runs" \

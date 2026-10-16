@@ -427,3 +427,48 @@ fn the_runbook_scan_actually_reaches_pmat_1373() {
         );
     }
 }
+
+/// PMAT-2175: §5 step 2 READS the night before it dispatches. Since PMAT-2166
+/// `ci.yml` runs on `main` every night, so on a frozen Friday the pinned SHA
+/// normally already carries a scheduled run; the step used to dispatch and
+/// wait unconditionally, spending a full ci run to re-measure a measured SHA.
+/// Pinned as an ORDER inside step 2, and tied to the trigger it depends on: if
+/// `ci.yml` ever loses its `schedule:`, "read the night first" is a read of
+/// nothing and this reds.
+#[test]
+fn release_step_2_reads_the_scheduled_run_before_it_dispatches() {
+    let doc = read("docs/RELEASE.md");
+    let s5 = doc
+        .split_once("\n## 5. ")
+        .map(|(_, rest)| rest.split_once("\n## 6. ").map_or(rest, |(s, _)| s))
+        .expect("docs/RELEASE.md has a `## 5.` section");
+    let step2 = s5
+        .split_once("\n2. **Record the advisory statuses**")
+        .and_then(|(_, rest)| rest.split_once("\n3. **").map(|(s, _)| s))
+        .expect("§5 still has step 2 `Record the advisory statuses`, followed by step 3");
+    let read_at = step2
+        .find("--event schedule")
+        .expect("§5 step 2 no longer reads the scheduled run (`gh run list ... --event schedule`)");
+    assert!(
+        step2[read_at..].contains("--commit <PINNED_SHA>"),
+        "§5 step 2 reads a scheduled run but not the one on `<PINNED_SHA>`"
+    );
+    let dispatch_at = step2
+        .find("gh workflow run ci.yml")
+        .expect("§5 step 2 lost its fallback dispatch for a SHA no night has measured");
+    assert!(
+        read_at < dispatch_at,
+        "§5 step 2 dispatches ci before it reads the night that may already exist"
+    );
+    assert!(
+        step2.contains("only if"),
+        "§5 step 2 must make the dispatch conditional (`only if there is none`)"
+    );
+    let ci: serde_yaml::Value = serde_yaml::from_str(&read(CI_WORKFLOW)).expect("ci.yml parses");
+    assert!(
+        ci["on"]["schedule"]
+            .as_sequence()
+            .is_some_and(|s| !s.is_empty()),
+        "{CI_WORKFLOW} has no `schedule:` trigger, so §5 step 2's scheduled run never exists"
+    );
+}
