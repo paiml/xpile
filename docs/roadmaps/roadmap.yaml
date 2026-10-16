@@ -27088,11 +27088,11 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
   github_issue: 2136
   item_type: bug
   title: release_story_derivation_witness's PMAT-id extraction disagrees with the plan's grep on hyphen-prefixed ids
-  status: inprogress
+  status: done
   priority: high
   assigned_to: null
   created: 2026-09-24T00:15:00Z
-  updated: 2026-09-24T00:15:00Z
+  updated: 2026-10-13T16:11:00Z
   spec: null
   acceptance_criteria:
   - 'ids_in_range counts ids exactly as grep -oE PMAT-[0-9]+ does, including foo-PMAT-N and PMAT-N-suffix'
@@ -27103,16 +27103,16 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
   estimated_effort: null
   labels:
   - kind:code
-  notes: 'Epic #2124 (v0.1.619). main went red on 2c370e21 for this reason.'
+  notes: 'Epic #2124 (v0.1.619). main went red on 2c370e21 for this reason. Done (v0.1.619 plan row C1): merged as 4b1b9b44e886e6d7880302decf87b730c913238c (PR #2137), an ancestor of origin/main; issue #2136 closed.'
 - id: PMAT-2133
   github_issue: 2133
   item_type: refactor
   title: book_published_command_witness.rs cannot be committed to — three functions exceed the pre-commit complexity gate
-  status: inprogress
+  status: done
   priority: medium
   assigned_to: null
   created: 2026-09-23T22:00:00Z
-  updated: 2026-09-23T22:00:00Z
+  updated: 2026-10-13T16:11:00Z
   spec: null
   acceptance_criteria:
   - pmat analyze complexity --file crates/xpile/tests/book_published_command_witness.rs reports no errors
@@ -27123,16 +27123,16 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
   estimated_effort: null
   labels:
   - kind:code
-  notes: 'Epic #2124 (v0.1.619).'
+  notes: 'Epic #2124 (v0.1.619). Done (v0.1.619 plan row C1): merged as dffc91b5b9c6870fdb959d375471df1d42c1c462 (PR #2134), an ancestor of origin/main; issue #2133 closed.'
 - id: PMAT-2141
   github_issue: 2141
   item_type: refactor
   title: crates/xpile/src/main.rs cannot be committed through the pre-commit complexity gate (six functions over cognitive 25)
-  status: inprogress
+  status: done
   priority: high
   assigned_to: null
   created: 2026-09-24T02:30:00Z
-  updated: 2026-09-24T02:30:00Z
+  updated: 2026-10-13T16:11:00Z
   spec: null
   acceptance_criteria:
   - pmat analyze complexity --file crates/xpile/src/main.rs --max-cyclomatic 30 --max-cognitive 25 is clean
@@ -27143,16 +27143,16 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
   estimated_effort: null
   labels:
   - kind:code
-  notes: 'Epic #2124 (v0.1.619).'
+  notes: 'Epic #2124 (v0.1.619). Done (v0.1.619 plan row C1): merged as dc6ea146c0594b1664f733771c62b544c4d25c68 (PR #2143), an ancestor of origin/main; issue #2141 closed.'
 - id: PMAT-2131
   github_issue: 2131
   item_type: task
   title: 'CRUX-0: known-answer gate on the RELEASED xpile binary (released_binary_crux.rs)'
-  status: inprogress
+  status: done
   priority: high
   assigned_to: null
   created: 2026-09-23T20:30:00Z
-  updated: 2026-09-23T20:30:00Z
+  updated: 2026-10-13T16:11:00Z
   spec: null
   acceptance_criteria:
   - green against cargo install xpile --version 0.1.618 --locked
@@ -27163,7 +27163,7 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
   estimated_effort: null
   labels:
   - kind:code
-  notes: 'Epic #2124 (v0.1.619).'
+  notes: 'Epic #2124 (v0.1.619). Done (v0.1.619 plan row C1): merged as 5c0739cae68d90aa6126a3556925bb4569e1c38a (PR #2132), an ancestor of origin/main; issue #2131 closed.'
 - id: PMAT-2142
   github_issue: 2142
   item_type: bug
@@ -27247,11 +27247,11 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
   github_issue: 2151
   item_type: task
   title: "proofs: raise the Kani seam floor, ≥5 harnesses bound to shipped code (epic #2125 row 1)"
-  status: inprogress
+  status: done
   priority: high
   assigned_to: null
   created: 2026-09-24T12:00:00Z
-  updated: 2026-09-24T12:00:00Z
+  updated: 2026-10-13T16:11:00Z
   spec: null
   acceptance_criteria:
   - at least 5 contracts/kani harness files declare kani-deps and call a shipped crates/*/src fn
@@ -27262,7 +27262,7 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
   estimated_effort: null
   labels:
   - kind:code
-  notes: 'Epic #2125 (v0.1.620), row 1 of the grilled plan. The seams are scalar predicates, following the recipe PMAT-1512 measured (recursive Expr walks do not finish under Kani). depyler-frontend was skipped because it pulls in rustpython-parser; its flip_cmp is a candidate for a later raise. Landed 6 bound files (floor 6): the original plus c_int_lit_fits, c_binop_is_modular, align8, commutative_monoid_op and ffi_abi_slot. Tried and not landed: diff_stdout (xpile-oracle) and ptx_version_for, both past the 180 s harness timeout on symbolic String (CI or gx10 candidates); ptx capability grammar was never run.'
+  notes: 'Epic #2125 (v0.1.620), row 1 of the grilled plan. The seams are scalar predicates, following the recipe PMAT-1512 measured (recursive Expr walks do not finish under Kani). depyler-frontend was skipped because it pulls in rustpython-parser; its flip_cmp is a candidate for a later raise. Landed 6 bound files (floor 6): the original plus c_int_lit_fits, c_binop_is_modular, align8, commutative_monoid_op and ffi_abi_slot. Tried and not landed: diff_stdout (xpile-oracle) and ptx_version_for, both past the 180 s harness timeout on symbolic String (CI or gx10 candidates); ptx capability grammar was never run. Done (v0.1.619 plan row C1): merged as 19b9d68b73475b88ee07dca536af3b3d9bce84c4 (PR #2152), an ancestor of origin/main; issue #2151 closed.'
 - id: PMAT-2150
   github_issue: 2150
   item_type: task
@@ -27285,11 +27285,11 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
   github_issue: 2154
   item_type: task
   title: "proofs: real_ffi_abi_slot checks all 20 meta-HIR Type variants"
-  status: inprogress
+  status: done
   priority: medium
   assigned_to: null
   created: 2026-09-25T00:00:00Z
-  updated: 2026-09-25T00:00:00Z
+  updated: 2026-10-13T16:11:00Z
   spec: null
   acceptance_criteria:
   - the harness checks every xpile_meta_hir::Type variant (payload-carrying ones built with concrete inner types) and asserts None for every non-C-scalar
@@ -27299,16 +27299,16 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
   estimated_effort: null
   labels:
   - kind:code
-  notes: 'Epic #2125 (v0.1.620). Follow-up to PMAT-2151 (PR #2152), from its quorum lane 3. The issue counted 19 variants; the enum has 20 (Ptr). Payload variants live in a second harness with mem::forget, because recursive Type drop glue timed CBMC out.'
+  notes: 'Epic #2125 (v0.1.620). Follow-up to PMAT-2151 (PR #2152), from its quorum lane 3. The issue counted 19 variants; the enum has 20 (Ptr). Payload variants live in a second harness with mem::forget, because recursive Type drop glue timed CBMC out. Done (v0.1.619 plan row C1): merged as dbbe8a519538623f501d085240368d934f4e7bb9 (PR #2156), an ancestor of origin/main; issue #2154 closed.'
 - id: PMAT-2157
   github_issue: 2157
   item_type: task
   title: "proofs: Lean-to-shipped pilot, PyIntArith floor-div/mod/shr checked against xpile's emitted Rust"
-  status: inprogress
+  status: done
   priority: medium
   assigned_to: null
   created: 2026-09-25T00:00:00Z
-  updated: 2026-09-25T00:00:00Z
+  updated: 2026-10-13T16:11:00Z
   spec: null
   acceptance_criteria:
   - a witness checks PyIntArith's model and its =false duals against the shipped Rust codegen's output on the same inputs
@@ -27319,16 +27319,16 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
   estimated_effort: null
   labels:
   - kind:code
-  notes: 'Epic #2125 (v0.1.620), row 2. Split at committed pins because no CI job has both lake and cargo: lake build checks model = pin, and lean_shipped_pilot_witness.rs checks pin = shipped.'
+  notes: 'Epic #2125 (v0.1.620), row 2. Split at committed pins because no CI job has both lake and cargo: lake build checks model = pin, and lean_shipped_pilot_witness.rs checks pin = shipped. Done (v0.1.619 plan row C1): merged as cf52f3bba2325d501293e5088c071f7b40959db7 (PR #2158), an ancestor of origin/main; issue #2157 closed.'
 - id: PMAT-2159
   github_issue: 2159
   item_type: task
   title: "proofs: re-derive PMAT-468, enumerate the contracts with no property-specific Runtime witness from the tree"
-  status: inprogress
+  status: done
   priority: medium
   assigned_to: null
   created: 2026-09-25T00:00:00Z
-  updated: 2026-09-25T00:00:00Z
+  updated: 2026-10-13T16:11:00Z
   spec: null
   acceptance_criteria:
   - a witness classifies every contracts/*.yaml id exactly once (executes / in-process / residue with a reason)
@@ -27339,16 +27339,16 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
   estimated_effort: null
   labels:
   - kind:code
-  notes: 'Epic #2125 (v0.1.620), row 3. Derived: 23 executes, 4 in-process, 8 residue of 35. PMAT-468''s earlier "re-scoped to 4" measured contracts without falsification_tests keys (#1875), a different question.'
+  notes: 'Epic #2125 (v0.1.620), row 3. Derived: 23 executes, 4 in-process, 8 residue of 35. PMAT-468''s earlier "re-scoped to 4" measured contracts without falsification_tests keys (#1875), a different question. Done (v0.1.619 plan row C1): merged as 29ccf87acb4d534951936b08c941442588b31834 (PR #2160), an ancestor of origin/main; issue #2159 closed.'
 - id: PMAT-2161
   github_issue: 2161
   item_type: task
   title: "bashrs: prove shell-composition idempotence in Lean and bind it to the shipped emitter (PMAT-469)"
-  status: inprogress
+  status: done
   priority: medium
   assigned_to: null
   created: 2026-09-25T00:00:00Z
-  updated: 2026-09-25T00:00:00Z
+  updated: 2026-10-13T16:11:00Z
   spec: null
   acceptance_criteria:
   - Shell.composition_idempotence_diamond proves run c (run c s) = run c s for mkdir -p, touch, chmod, > and VAR=x; the >> and chmod-then-touch duals are proven false
@@ -27359,16 +27359,16 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
   estimated_effort: null
   labels:
   - kind:code
-  notes: 'Epic #2125 (v0.1.620), row 4; legacy PMAT-469. Advances C-BASHRS-POSIX-IDEMPOTENCE to diamond depth 14, the exception PMAT-469 names. Lean declarations 489 -> 494.'
+  notes: 'Epic #2125 (v0.1.620), row 4; legacy PMAT-469. Advances C-BASHRS-POSIX-IDEMPOTENCE to diamond depth 14, the exception PMAT-469 names. Lean declarations 489 -> 494. Done (v0.1.619 plan row C1): merged as 3eafb2096f85d65069590b39163ee9b2b1399f28 (PR #2162), an ancestor of origin/main; issue #2161 closed.'
 - id: PMAT-2163
   github_issue: 2163
   item_type: task
   title: "quorum: count a Semantic vote only for Lean theorems bound to shipped code, pilot contracts only"
-  status: inprogress
+  status: done
   priority: medium
   assigned_to: null
   created: 2026-09-25T00:00:00Z
-  updated: 2026-09-25T00:00:00Z
+  updated: 2026-10-13T16:11:00Z
   spec: null
   acceptance_criteria:
   - a contract with metadata quorum_semantic shipped-bound counts only obligations with a shipped_binding as Semantic votes
@@ -27380,7 +27380,7 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
   estimated_effort: null
   labels:
   - kind:code
-  notes: 'Epic #2125 (v0.1.620), row 5. Pilot: C-PY-INT-ARITH (Sem 42 -> 3) and C-BASHRS-POSIX-IDEMPOTENCE (18 -> 1); statuses unchanged, 26 QUORUM / 9 PARTIAL.'
+  notes: 'Epic #2125 (v0.1.620), row 5. Pilot: C-PY-INT-ARITH (Sem 42 -> 3) and C-BASHRS-POSIX-IDEMPOTENCE (18 -> 1); statuses unchanged, 26 QUORUM / 9 PARTIAL. Done (v0.1.619 plan row C1): merged as d7b8681546641d92a694fe185f2d2e6ff86e3da1 (PR #2164), an ancestor of origin/main; issue #2163 closed.'
 - id: PMAT-2172
   github_issue: 2172
   item_type: task
