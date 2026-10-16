@@ -27476,3 +27476,22 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
   - kind:docs
   notes: null
   epic: 2124
+- id: PMAT-2177
+  github_issue: 2177
+  item_type: task
+  title: 'ci: license-scan''s cargo deny step fails its night job (no continue-on-error), so a deny finding files the night issue'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-10-15T04:46:24Z
+  updated: 2026-10-15T04:46:24Z
+  spec: null
+  acceptance_criteria:
+  - 'The license-scan step `cargo deny check licenses bans sources` in ci.yml carries no continue-on-error, so a deny finding fails the night-only license-scan job and its last step (night-issue) opens or updates the one issue. license-scan stays out of the required set (gate, workspace-test). night_checks_off_pr_path.rs asserts that no night job, and no step in one, carries continue-on-error; it is red on 850ffff6 and green after.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 2124
