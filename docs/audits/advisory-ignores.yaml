@@ -42,17 +42,6 @@
 
 max_window_days: 90
 ignores:
-- id: RUSTSEC-2024-0436
-  crate: paste
-  class: unmaintained
-  source: deny
-  owner: noah
-  owner_ticket: PMAT-2120
-  removed_by: '2026-10-20'
-  reason: 'paste, reached via malachite-bigint. Unmaintained upstream, not a vulnerability.
-    MEASURED live 2026-09-20: removing this ignore alone takes `cargo deny check advisories`
-    from exit 0 to exit 1. Note it is DEAD in paiml/ruchy on the same advisory — the difference
-    is this repo''s `[graph] all-features = true`.'
 - id: RUSTSEC-2025-0075
   crate: unic-char-range
   class: unmaintained
