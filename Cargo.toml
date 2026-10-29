@@ -16,6 +16,7 @@ members = [
     "crates/xpile-bigint",                    # added 2026-05-17 (PMAT-012)
     # ── code-lane frontends ───────────────────────────────────────
     "crates/depyler-frontend",
+    "crates/xpile-rustpython-parser",         # PMAT-2120: unic-* free fork, staged, not published
     "crates/decy-frontend",
     "crates/ruchy-frontend",
     "crates/bashrs-frontend",                 # added 2026-05-17 (PMAT-037 / XPILE-BASHRS-MERGER-001)

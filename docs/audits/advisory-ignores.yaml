@@ -20,7 +20,7 @@
 # crate in the advisory's reachable graph. Only removing the ignore and watching
 # the verdict change distinguishes them, and the gate does exactly that.
 #
-# And it does it PER EXEMPTION. Removing all seven at once and seeing
+# And it does it PER EXEMPTION. Removing all exemptions at once and seeing
 # `advisories FAILED` proves at least one is live, not that each one is; a test
 # over a set does not license a claim about its members.
 #
@@ -42,72 +42,6 @@
 
 max_window_days: 90
 ignores:
-- id: RUSTSEC-2024-0436
-  crate: paste
-  class: unmaintained
-  source: deny
-  owner: noah
-  owner_ticket: PMAT-2120
-  removed_by: '2026-10-20'
-  reason: 'paste, reached via malachite-bigint. Unmaintained upstream, not a vulnerability.
-    MEASURED live 2026-09-20: removing this ignore alone takes `cargo deny check advisories`
-    from exit 0 to exit 1. Note it is DEAD in paiml/ruchy on the same advisory — the difference
-    is this repo''s `[graph] all-features = true`.'
-- id: RUSTSEC-2025-0075
-  crate: unic-char-range
-  class: unmaintained
-  source: deny
-  owner: noah
-  owner_ticket: PMAT-2120
-  removed_by: '2026-10-20'
-  reason: unic-char-range, via rustpython-parser. Crate name recovered from cargo-deny output;
-    the entry previously read only "unmaintained ecosystem dep". MEASURED live 2026-09-20
-    by the removal test.
-- id: RUSTSEC-2025-0080
-  crate: unic-common
-  class: unmaintained
-  source: deny
-  owner: noah
-  owner_ticket: PMAT-2120
-  removed_by: '2026-10-20'
-  reason: unic-common, via rustpython-parser. Crate name recovered from cargo-deny output.
-    MEASURED live 2026-09-20 by the removal test.
-- id: RUSTSEC-2025-0081
-  crate: unic-char-property
-  class: unmaintained
-  source: deny
-  owner: noah
-  owner_ticket: PMAT-2120
-  removed_by: '2026-10-20'
-  reason: unic-char-property, via rustpython-parser. MEASURED live 2026-09-20 by the removal
-    test.
-- id: RUSTSEC-2025-0090
-  crate: unic-emoji-char
-  class: unmaintained
-  source: deny
-  owner: noah
-  owner_ticket: PMAT-2120
-  removed_by: '2026-10-20'
-  reason: unic-emoji-char, via rustpython-parser. Crate name recovered from cargo-deny output.
-    MEASURED live 2026-09-20 by the removal test.
-- id: RUSTSEC-2025-0098
-  crate: unic-ucd-version
-  class: unmaintained
-  source: deny
-  owner: noah
-  owner_ticket: PMAT-2120
-  removed_by: '2026-10-20'
-  reason: unic-ucd-version, via rustpython-parser. Crate name recovered from cargo-deny output.
-    MEASURED live 2026-09-20 by the removal test.
-- id: RUSTSEC-2025-0100
-  crate: unic-ucd-ident
-  class: unmaintained
-  source: deny
-  owner: noah
-  owner_ticket: PMAT-2120
-  removed_by: '2026-10-20'
-  reason: unic-ucd-ident, via rustpython-parser. Crate name recovered from cargo-deny output.
-    MEASURED live 2026-09-20 by the removal test.
 - id: RUSTSEC-2024-0449
   crate: unsafe-libyaml
   class: unmaintained

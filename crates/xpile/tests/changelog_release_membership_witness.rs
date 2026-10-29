@@ -230,6 +230,25 @@ fn no_released_section_claims_an_arc_that_is_not_in_its_tag() {
     );
 }
 
+/// True when the leading section is a release whose `v<ver>` tag does not exist yet: this
+/// checkout is the release commit itself (the tag is cut after it merges), so it may roll
+/// `[Unreleased]` away without opening a replacement (PMAT-2120 quorum, 3/3).
+fn leading_release_tag_pending(secs: &[(String, String)]) -> bool {
+    match secs.first() {
+        Some((name, _)) if name != "Unreleased" => !tag_exists(&format!("v{name}")),
+        _ => false,
+    }
+}
+
+/// The decision, separated from git so the red half can drive it with constructed inputs.
+fn unreleased_required(
+    commits_since_newest_tag: usize,
+    has_unreleased: bool,
+    release_commit: bool,
+) -> bool {
+    commits_since_newest_tag > 0 && !has_unreleased && !release_commit
+}
+
 #[test]
 fn an_unreleased_heading_exists_whenever_work_has_merged_since_the_newest_tag() {
     // THE POKA-YOKE FOR THE ROOT CAUSE. The release commit is allowed to leave no
@@ -246,9 +265,11 @@ fn an_unreleased_heading_exists_whenever_work_has_merged_since_the_newest_tag() 
         return;
     };
     let n = since.lines().filter(|l| !l.trim().is_empty()).count();
-    let has = changelog().contains("\n## [Unreleased]");
+    let body = changelog();
+    let has = body.contains("\n## [Unreleased]");
+    let pending = leading_release_tag_pending(&sections(&body));
     assert!(
-        n == 0 || has,
+        !unreleased_required(n, has, pending),
         "{n} commit(s) have merged since {newest} and CHANGELOG.md has no `## [Unreleased]` \
          heading, so every new entry must land under a RELEASED section — which is how \
          `[0.1.618]` came to claim 15 arcs it does not contain (PMAT-1496). Open an \
@@ -322,4 +343,25 @@ fn the_rule_detects_a_constructed_violation() {
         arc_ids("### Fixed\n### Added\n### Known divergences\n").is_empty(),
         "bare `###` headings are being read as arc membership claims"
     );
+}
+
+#[test]
+fn the_unreleased_presence_rule_detects_a_missing_heading_and_spares_the_release_commit() {
+    // RED HALF for the release-commit exemption. Without it the exemption could swallow
+    // the poka-yoke it was carved out of.
+    // Work merged after a released tag, no heading, leading release already tagged: RED.
+    assert!(unreleased_required(3, false, false));
+    // The release commit: leading section's tag is not cut yet, so no heading is needed.
+    assert!(!unreleased_required(3, false, true));
+    // A heading present, or nothing merged since the tag, never requires one.
+    assert!(!unreleased_required(3, true, false));
+    assert!(!unreleased_required(0, false, false));
+
+    // The leading-section detector: an Unreleased lead or an empty changelog is never a
+    // pending release; a lead naming a version with no tag is.
+    let unreleased = vec![("Unreleased".to_string(), String::new())];
+    assert!(!leading_release_tag_pending(&unreleased));
+    assert!(!leading_release_tag_pending(&[]));
+    let ghost = vec![("9999.99.99".to_string(), String::new())];
+    assert!(leading_release_tag_pending(&ghost));
 }
