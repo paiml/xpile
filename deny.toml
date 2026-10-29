@@ -9,24 +9,14 @@ all-features = true
 # same version, fix forward at the next patch). No dep is yanked today, so this
 # lands green and only ever fires BEFORE a publish, which is the whole point.
 yanked = "deny"
-# Unmaintained-but-not-vulnerable advisories pulled in via rustpython-parser
-# (depyler-frontend's parser). All are upstream ecosystem health warnings,
-# not security vulnerabilities. Revisit when rustpython-parser modernizes
-# its dep graph or when xpile switches to a different Python parser.
+# PMAT-2120: the rustpython-parser advisories (paste, unic-*) are gone: the parser is the
+# in-tree xpile-rustpython-parser fork on num-bigint and unicode-ident.
 # PMAT-2120: every id below carries an entry in docs/audits/advisory-ignores.yaml
 # with a crate, a named owner, an owner ticket and a removed_by date, enforced by
 # crates/xpile/tests/advisory_expiry.rs under the required workspace-test context.
 # That gate also refuses a DEAD exemption — one whose removal leaves cargo-deny at
-# exit 0 — by running the removal test PER EXEMPTION. Five of these lines used to
-# read only "unmaintained ecosystem dep" (a first draft said three; the diff says
-# five — 0075, 0080, 0090, 0098, 0100); the crate names came from cargo-deny.
+# exit 0 — by running the removal test PER EXEMPTION.
 ignore = [
-    "RUSTSEC-2025-0075",  # unic-char-range
-    "RUSTSEC-2025-0080",  # unic-common
-    "RUSTSEC-2025-0081",  # unic-char-property
-    "RUSTSEC-2025-0090",  # unic-emoji-char
-    "RUSTSEC-2025-0098",  # unic-ucd-version
-    "RUSTSEC-2025-0100",  # unic-ucd-ident
     "RUSTSEC-2024-0449",  # unsafe-libyaml (via serde_yaml 0.9; PMAT-2172, removed_by 2026-11-30)
 ]
 

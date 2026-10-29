@@ -55,7 +55,6 @@ binary), `build-only` (executed by a build script, not linked), or `dev-only`
 | hexf-parse | 0.2.1 | CC0-1.0 | binary | naga -> wgpu -> xpile-spirv-codegen and xpile-wgsl-codegen -> xpile-core -> xpile |
 | foldhash | 0.1.5 | Zlib | binary | hashbrown 0.15.5 -> gpu-descriptor -> wgpu-hal -> wgpu -> xpile-spirv-codegen -> xpile-core -> xpile |
 | foldhash | 0.2.0 | Zlib | binary | hashbrown 0.16.1 -> gpu-allocator -> wgpu-hal -> wgpu -> xpile-spirv-codegen -> xpile-core -> xpile |
-| tiny-keccak | 2.0.2 | CC0-1.0 | build-only | build-dependency of rustpython-parser; runs in a build script, never linked |
 
 <!-- XPILE-LICENSE-DISCLOSURE-END -->
 

@@ -252,7 +252,7 @@ fn disclosure_rows_are_well_formed_and_outside_the_allow_list() {
     // Floor, not a ratchet: high enough that a red can never be fixed by
     // deleting rows, low enough that dropping a dependency is not a failure.
     assert!(
-        rows.len() >= 4,
+        rows.len() >= 3,
         "{NOTICE} discloses only {} row(s) — the table parser is broken or the \
          disclosure has been gutted. A red here is NOT fixable by deleting rows.",
         rows.len()
@@ -561,7 +561,7 @@ fn every_linkage_claim_is_re_derived_from_cargo_tree() {
         rows.len(),
         "linkage re-derivation skipped a row — the loop is broken"
     );
-    assert!(checked >= 5, "only {checked} linkage claim(s) re-derived");
+    assert!(checked >= 3, "only {checked} linkage claim(s) re-derived");
 }
 
 fn cargo_tree(spec: &str, edges: &str) -> String {
