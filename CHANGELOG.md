@@ -5,7 +5,7 @@ All notable changes to xpile are recorded here. The project follows
 pre-1.0 development each minor version may include breaking changes to
 meta-HIR and the trait surfaces.
 
-## [Unreleased]
+## [0.1.619] - 2026-10-30
 
 Work merged after the `v0.1.618` tag was cut. These entries were written into the
 `[0.1.618]` section because the release commit rolled `[Unreleased]` into it and did
