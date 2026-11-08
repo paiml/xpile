@@ -1,0 +1,106 @@
+name: nightly
+
+# Nightly binary (xpile#2149, epic #2124). Operator rule: "nightly binary built
+# is hard requirement for sovereign stack".
+#
+# Builds the `xpile` binary only when:
+#   1. `main` moved since the last nightly (the `nightly` prerelease body is
+#      stamped `built-from: <sha>`), AND
+#   2. CI is green on that exact SHA (both required contexts, `gate` and
+#      `workspace-test`, concluded `success` on the head commit).
+# It publishes the binary and its sha256 to the `nightly` prerelease. When the
+# build is red it publishes NOTHING (the old nightly stays, stamped with its own
+# SHA) and the night-issue action opens or updates `night: nightly red on main`.
+# A skipped night (main did not move, or CI not green yet) is logged in the run
+# summary, never silent.
+#
+# LAB, not a GATE (C324): it runs only on `schedule` and `workflow_dispatch`,
+# is not a required context, and cannot block a merge or a release.
+# Pinned by crates/xpile/tests/nightly_binary_workflow.rs.
+
+on:
+  schedule:
+    - cron: '47 6 * * *'
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  nightly:
+    name: nightly
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      issues: write
+      checks: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: decide — did main move, and is CI green on this SHA?
+        id: decide
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          sha="$(git rev-parse HEAD)"
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+          last="$(gh release view nightly --json body --jq .body 2>/dev/null | sed -n 's/^built-from: //p' | head -n 1 || true)"
+          if [ "$last" = "$sha" ]; then
+            echo "build=false" >> "$GITHUB_OUTPUT"
+            echo "skip: main has not moved since the last nightly ($sha)" | tee -a "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          ok="$(gh api "repos/$GITHUB_REPOSITORY/commits/$sha/check-runs?per_page=100" \
+            --jq '[.check_runs[] | select(.name=="gate" or .name=="workspace-test")] | (map(select(.conclusion=="success")) | map(.name) | unique | length)')"
+          if [ "$ok" != "2" ]; then
+            echo "build=false" >> "$GITHUB_OUTPUT"
+            echo "skip: CI is not green on $sha (gate + workspace-test successes: $ok of 2); no binary published" | tee -a "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          echo "build=true" >> "$GITHUB_OUTPUT"
+
+      - uses: dtolnay/rust-toolchain@stable
+        if: steps.decide.outputs.build == 'true'
+
+      - uses: Swatinem/rust-cache@v2
+        if: steps.decide.outputs.build == 'true'
+        with:
+          prefix-key: "nightly-v0"
+
+      - name: build the release binary
+        if: steps.decide.outputs.build == 'true'
+        run: cargo build --release --locked -p xpile
+
+      - name: smoke the binary
+        if: steps.decide.outputs.build == 'true'
+        run: ./target/release/xpile --version
+
+      - name: stage binary and sha256
+        if: steps.decide.outputs.build == 'true'
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          cp target/release/xpile dist/xpile-nightly-linux-x86_64
+          (cd dist && sha256sum xpile-nightly-linux-x86_64 > xpile-nightly-linux-x86_64.sha256)
+
+      - name: publish the nightly prerelease, stamped with its SHA
+        if: steps.decide.outputs.build == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ steps.decide.outputs.sha }}
+        run: |
+          set -euo pipefail
+          printf 'built-from: %s\n' "$SHA" > notes.txt
+          gh release delete nightly --yes 2>/dev/null || true
+          gh release create nightly --prerelease --target "$SHA" \
+            --title "nightly $SHA" --notes-file notes.txt dist/*
+
+      # The one issue a red night opens or updates. LAST step; schedule only.
+      - name: night issue — open or update the one issue for this check
+        if: failure() && github.event_name == 'schedule'
+        uses: ./.github/actions/night-issue
+        with:
+          check: nightly
