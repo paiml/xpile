@@ -18097,6 +18097,28 @@ fn infer_type(e: &Expr) -> Type {
 /// the enclosing function is BigInt-typed — without this lift, a
 /// trailing `return 1 if n <= 1 else ...` would infer I64 for the
 /// `1` branch and fail the return-type check.
+/// xpile#2165: `true` when `key` is a literal (or tuple of literals) whose type
+/// definitely differs from `want`. Non-literals return `false` (undecidable
+/// here). `bool` into an `int` key type is the PMAT-751 coercion, allowed.
+fn literal_key_mismatch(key: &Expr, want: &Type) -> bool {
+    match (key, want) {
+        (Expr::LitInt(_), Type::I64) => false,
+        (Expr::LitBool(_), Type::Bool | Type::I64) => false,
+        (Expr::LitStr(_), Type::Str) => false,
+        (Expr::LitFloat(_), Type::F64) => false,
+        (Expr::LitInt(_) | Expr::LitBool(_) | Expr::LitStr(_) | Expr::LitFloat(_), _) => true,
+        (Expr::TupleLit(elems), Type::Tuple(tys)) => {
+            elems.len() != tys.len()
+                || elems
+                    .iter()
+                    .zip(tys.iter())
+                    .any(|(e, t)| literal_key_mismatch(e, t))
+        }
+        (Expr::TupleLit(_), _) => true,
+        _ => false,
+    }
+}
+
 fn infer_type_in_ctx(ctx: &LoweringCtx, e: &Expr) -> Type {
     match e {
         Expr::Ident(n) => ctx.name_types.get(n).cloned().unwrap_or(Type::I64),
@@ -18647,6 +18669,14 @@ fn lower_expr_in_ctx_inner(ctx: &LoweringCtx, e: ast::Expr) -> Result<Expr, Fron
             }
             if let Type::Dict(k_ty, _) = infer_type_in_ctx(ctx, &collection) {
                 let key = lower_expr_in_ctx(ctx, (*sub.slice).clone())?;
+                // xpile#2165: a LITERAL key whose type cannot be the dict key type
+                // (`{"x": 1}[42]`, a 3-tuple into a 2-tuple-keyed dict) emitted a
+                // `.get(&k)` that rustc rejects (E0277) at exit 0. Refuse it here.
+                if literal_key_mismatch(&key, &k_ty) {
+                    return Err(FrontendError::Lower(format!(
+                        "dict subscript key {key:?} cannot match the dict key type {k_ty:?}: the Rust lane would emit a lookup rustc rejects (E0277); CPython raises KeyError (xpile#2165)"
+                    )));
+                }
                 // PMAT-751 (HUNT-V14 #5): a bool key into an INT-keyed dict
                 // (`d[True]`) — Python's `bool` is an `int` subtype and
                 // `hash(True) == hash(1)`, so `d[True]` is `d[1]`. Coerce the bool
