@@ -27495,3 +27495,22 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
   - kind:code
   notes: null
   epic: 2124
+- id: PMAT-2179
+  github_issue: 2179
+  item_type: task
+  title: 'no LGPL: drop the malachite family from the shipped binary (rustpython-parser on its num-bigint feature)'
+  status: inprogress
+  priority: medium
+  assigned_to: null
+  created: 2026-10-15T04:46:24Z
+  updated: 2026-11-09T09:30:00Z
+  spec: null
+  acceptance_criteria:
+  - 'Cargo.lock has no malachite* package, NOTICE.md lists no LGPL row, dependency_license_policy::no_lgpl_row_and_no_malachite_package_in_the_lockfile is RED on the old lockfile, and the dead RUSTSEC-2024-0436 ignore leaves deny.toml and the advisory ledger.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 2124

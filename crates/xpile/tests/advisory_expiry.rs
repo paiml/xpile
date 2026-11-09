@@ -45,6 +45,10 @@ const REQUIRE: &str = "XPILE_REQUIRE_CARGO_DENY";
 /// the gate refuses a ledger whose declaration disagrees with this constant.
 const MAX_WINDOW_DAYS: i64 = 90;
 
+/// Days before `removed_by` at which the expiry check starts failing, so a
+/// promise coming due is a scheduled red two weeks out, never a surprise.
+const WARN_DAYS: i64 = 14;
+
 #[derive(Debug, serde::Deserialize)]
 struct Ledger {
     max_window_days: i64,
@@ -236,14 +240,26 @@ fn parse_iso(s: &str) -> Option<i64> {
     Some(days_from_civil(y, m, d))
 }
 
-/// Today, in whole UTC days. UTC and not local: a gate whose verdict depends on
-/// where it runs is a gate you eventually argue with.
+/// "Today", in whole UTC days, WITHOUT reading the wall clock (PMAT-2120 follow-up).
+/// A test whose verdict changes while the tree does not is a flaky gate: PR #2183
+/// went red on an unchanged diff because the date moved past 2026-10-20.
+/// The anchor is the committer date of HEAD (`git log -1 --format=%cs`), so the
+/// verdict is a pure function of the commit. The night lane, which exists to catch
+/// promises coming due, sets `XPILE_ADVISORY_TODAY=YYYY-MM-DD` to the real date.
 fn today_utc_days() -> i64 {
-    let secs = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .expect("PMAT-2120: system clock is before the epoch")
-        .as_secs() as i64;
-    secs / 86_400
+    if let Ok(v) = std::env::var("XPILE_ADVISORY_TODAY") {
+        return parse_iso(v.trim())
+            .unwrap_or_else(|| panic!("XPILE_ADVISORY_TODAY={v:?} is not YYYY-MM-DD"));
+    }
+    let out = std::process::Command::new("git")
+        .args(["log", "-1", "--format=%cs"])
+        .current_dir(env!("CARGO_MANIFEST_DIR"))
+        .output()
+        .expect("PMAT-2120: git is required to anchor the expiry date; set XPILE_ADVISORY_TODAY");
+    let s = String::from_utf8_lossy(&out.stdout);
+    parse_iso(s.trim()).unwrap_or_else(|| {
+        panic!("PMAT-2120: cannot read HEAD's date ({s:?}); set XPILE_ADVISORY_TODAY=YYYY-MM-DD")
+    })
 }
 
 // ------------------------------------------------ the checks, over data
@@ -386,6 +402,15 @@ fn thin_refuses_a_missing_owner_a_missing_crate_and_a_short_reason() {
 }
 
 #[test]
+fn warning_window_fails_exactly_warn_days_before_the_date() {
+    let today = days_from_civil(2026, 9, 20);
+    let on_edge = entry("RUSTSEC-2024-0001", "2026-10-04"); // today + 14: still fine
+    let inside = entry("RUSTSEC-2024-0002", "2026-10-03"); // today + 13: warns
+    assert!(expired(&[on_edge], today + WARN_DAYS).is_empty());
+    assert_eq!(expired(&[inside], today + WARN_DAYS).len(), 1);
+}
+
+#[test]
 fn expired_refuses_yesterday_accepts_today_and_counts_unreadable_as_expired() {
     let today = days_from_civil(2026, 9, 20);
     let e = [
@@ -475,10 +500,12 @@ fn every_entry_names_a_crate_an_owner_and_a_ticket() {
 
 #[test]
 fn no_exemption_is_past_its_removed_by() {
-    let expired = expired(&ledger().ignores, today_utc_days());
+    // Warning window: fail WARN_DAYS before the date, so the red lands as a
+    // scheduled ticket two weeks out and never as a surprise on an unrelated PR.
+    let expired = expired(&ledger().ignores, today_utc_days() + WARN_DAYS);
     assert!(
         expired.is_empty(),
-        "PMAT-2120 EXEMPTION EXPIRED: {} past their removed_by: {expired:#?}\n\n\
+        "PMAT-2120 EXEMPTION EXPIRES WITHIN {WARN_DAYS} DAYS (or already expired): {} past their removed_by: {expired:#?}\n\n\
          This is the promise coming due, not a flaky gate. Either the advisory was \
          resolved — drop the ignore and the entry — or it was not, in which case \
          re-review it and move the date DELIBERATELY, naming what changed. An \

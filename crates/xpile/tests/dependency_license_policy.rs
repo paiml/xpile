@@ -252,7 +252,7 @@ fn disclosure_rows_are_well_formed_and_outside_the_allow_list() {
     // Floor, not a ratchet: high enough that a red can never be fixed by
     // deleting rows, low enough that dropping a dependency is not a failure.
     assert!(
-        rows.len() >= 5,
+        rows.len() >= 4,
         "{NOTICE} discloses only {} row(s) — the table parser is broken or the \
          disclosure has been gutted. A red here is NOT fixable by deleting rows.",
         rows.len()
@@ -301,43 +301,29 @@ fn disclosure_rows_are_well_formed_and_outside_the_allow_list() {
     );
 }
 
-/// The sentence that matters. `malachite` is copyleft and it is in the binary
-/// every `cargo install xpile` produces; if that ever reads `dev-only`, either
-/// the dependency graph changed (update the row, and the live half will agree)
-/// or someone made the problem disappear by retyping it.
+/// PMAT-2179: no LGPL in xpile (operator ruling 2026-10-15). The `malachite`
+/// family came in through rustpython-parser's default `malachite-bigint`
+/// feature; neither the lockfile nor `NOTICE.md` may carry it.
 #[test]
-fn every_lgpl_row_is_disclosed_as_linked_into_the_shipped_binary() {
+fn no_lgpl_row_and_no_malachite_package_in_the_lockfile() {
     let rows = disclosure_rows();
-    let lgpl: Vec<&Row> = rows
+    let lgpl: Vec<String> = rows
         .iter()
         .filter(|r| r.license.to_uppercase().starts_with("LGPL"))
+        .map(Row::spec)
         .collect();
     assert!(
-        !lgpl.is_empty(),
-        "{NOTICE} discloses no LGPL row. If the copyleft dependency really is \
-         gone, that is excellent news and this test should be deleted in the \
-         same commit that proves it — but it must not be deleted to make a red \
-         go away."
+        lgpl.is_empty(),
+        "{NOTICE} discloses LGPL row(s) {lgpl:?}; xpile ships no LGPL"
     );
-    for row in lgpl {
-        assert_eq!(
-            row.linkage,
-            "binary",
-            "{NOTICE} discloses LGPL crate {} as {:?}. It reaches the shipped \
-             binary as a NORMAL dependency; re-derive with `cargo tree -p xpile \
-             -e normal --all-features -i {}` before changing this column.",
-            row.spec(),
-            row.linkage,
-            row.spec()
-        );
-    }
-
-    let text = read(NOTICE);
+    let lock = read("Cargo.lock");
+    let bad: Vec<&str> = lock
+        .lines()
+        .filter(|l| l.starts_with("name = \"malachite"))
+        .collect();
     assert!(
-        text.contains("lgpl-in-shipped-binary"),
-        "{NOTICE} must point at the `lgpl-in-shipped-binary` owner decision. \
-         Enumerating a copyleft dependency without naming who decides what to \
-         do about it turns disclosure into a shrug."
+        bad.is_empty(),
+        "Cargo.lock links the LGPL malachite family: {bad:?}"
     );
 }
 
@@ -579,7 +565,7 @@ fn every_linkage_claim_is_re_derived_from_cargo_tree() {
         rows.len(),
         "linkage re-derivation skipped a row — the loop is broken"
     );
-    assert!(checked >= 5, "only {checked} linkage claim(s) re-derived");
+    assert!(checked >= 4, "only {checked} linkage claim(s) re-derived");
 }
 
 fn cargo_tree(spec: &str, edges: &str) -> String {
