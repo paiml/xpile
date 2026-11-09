@@ -236,14 +236,26 @@ fn parse_iso(s: &str) -> Option<i64> {
     Some(days_from_civil(y, m, d))
 }
 
-/// Today, in whole UTC days. UTC and not local: a gate whose verdict depends on
-/// where it runs is a gate you eventually argue with.
+/// "Today", in whole UTC days, WITHOUT reading the wall clock (PMAT-2120 follow-up).
+/// A test whose verdict changes while the tree does not is a flaky gate: PR #2183
+/// went red on an unchanged diff because the date moved past 2026-10-20.
+/// The anchor is the committer date of HEAD (`git log -1 --format=%cs`), so the
+/// verdict is a pure function of the commit. The night lane, which exists to catch
+/// promises coming due, sets `XPILE_ADVISORY_TODAY=YYYY-MM-DD` to the real date.
 fn today_utc_days() -> i64 {
-    let secs = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .expect("PMAT-2120: system clock is before the epoch")
-        .as_secs() as i64;
-    secs / 86_400
+    if let Ok(v) = std::env::var("XPILE_ADVISORY_TODAY") {
+        return parse_iso(v.trim())
+            .unwrap_or_else(|| panic!("XPILE_ADVISORY_TODAY={v:?} is not YYYY-MM-DD"));
+    }
+    let out = std::process::Command::new("git")
+        .args(["log", "-1", "--format=%cs"])
+        .current_dir(env!("CARGO_MANIFEST_DIR"))
+        .output()
+        .expect("PMAT-2120: git is required to anchor the expiry date; set XPILE_ADVISORY_TODAY");
+    let s = String::from_utf8_lossy(&out.stdout);
+    parse_iso(s.trim()).unwrap_or_else(|| {
+        panic!("PMAT-2120: cannot read HEAD's date ({s:?}); set XPILE_ADVISORY_TODAY=YYYY-MM-DD")
+    })
 }
 
 // ------------------------------------------------ the checks, over data

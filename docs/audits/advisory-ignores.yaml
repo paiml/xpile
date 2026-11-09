@@ -48,7 +48,7 @@ ignores:
   source: deny
   owner: noah
   owner_ticket: PMAT-2120
-  removed_by: '2026-10-20'
+  removed_by: '2027-01-31'
   reason: unic-char-range, via rustpython-parser. Crate name recovered from cargo-deny output;
     the entry previously read only "unmaintained ecosystem dep". MEASURED live 2026-09-20
     by the removal test.
@@ -58,16 +58,16 @@ ignores:
   source: deny
   owner: noah
   owner_ticket: PMAT-2120
-  removed_by: '2026-10-20'
+  removed_by: '2027-01-31'
   reason: unic-common, via rustpython-parser. Crate name recovered from cargo-deny output.
-    MEASURED live 2026-09-20 by the removal test.
+    MEASURED live 2026-09-20 by the removal test. Renewed 2026-11-09 to 2027-01-31: still reached via rustpython-parser 0.4, no replacement landed (PMAT-2120).
 - id: RUSTSEC-2025-0081
   crate: unic-char-property
   class: unmaintained
   source: deny
   owner: noah
   owner_ticket: PMAT-2120
-  removed_by: '2026-10-20'
+  removed_by: '2027-01-31'
   reason: unic-char-property, via rustpython-parser. MEASURED live 2026-09-20 by the removal
     test.
 - id: RUSTSEC-2025-0090
@@ -76,27 +76,27 @@ ignores:
   source: deny
   owner: noah
   owner_ticket: PMAT-2120
-  removed_by: '2026-10-20'
+  removed_by: '2027-01-31'
   reason: unic-emoji-char, via rustpython-parser. Crate name recovered from cargo-deny output.
-    MEASURED live 2026-09-20 by the removal test.
+    MEASURED live 2026-09-20 by the removal test. Renewed 2026-11-09 to 2027-01-31: still reached via rustpython-parser 0.4, no replacement landed (PMAT-2120).
 - id: RUSTSEC-2025-0098
   crate: unic-ucd-version
   class: unmaintained
   source: deny
   owner: noah
   owner_ticket: PMAT-2120
-  removed_by: '2026-10-20'
+  removed_by: '2027-01-31'
   reason: unic-ucd-version, via rustpython-parser. Crate name recovered from cargo-deny output.
-    MEASURED live 2026-09-20 by the removal test.
+    MEASURED live 2026-09-20 by the removal test. Renewed 2026-11-09 to 2027-01-31: still reached via rustpython-parser 0.4, no replacement landed (PMAT-2120).
 - id: RUSTSEC-2025-0100
   crate: unic-ucd-ident
   class: unmaintained
   source: deny
   owner: noah
   owner_ticket: PMAT-2120
-  removed_by: '2026-10-20'
+  removed_by: '2027-01-31'
   reason: unic-ucd-ident, via rustpython-parser. Crate name recovered from cargo-deny output.
-    MEASURED live 2026-09-20 by the removal test.
+    MEASURED live 2026-09-20 by the removal test. Renewed 2026-11-09 to 2027-01-31: still reached via rustpython-parser 0.4, no replacement landed (PMAT-2120).
 - id: RUSTSEC-2024-0449
   crate: unsafe-libyaml
   class: unmaintained
