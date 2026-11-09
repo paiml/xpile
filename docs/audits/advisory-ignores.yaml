@@ -60,7 +60,7 @@ ignores:
   owner_ticket: PMAT-2120
   removed_by: '2027-01-31'
   reason: unic-common, via rustpython-parser. Crate name recovered from cargo-deny output.
-    MEASURED live 2026-09-20 by the removal test. Renewed 2026-11-09 to 2027-01-31: still reached via rustpython-parser 0.4, no replacement landed (PMAT-2120).
+    MEASURED live 2026-09-20 by the removal test. Renewed 2026-11-09 to 2027-01-31 because it is still reached via rustpython-parser 0.4, no replacement landed (PMAT-2120).
 - id: RUSTSEC-2025-0081
   crate: unic-char-property
   class: unmaintained
@@ -78,7 +78,7 @@ ignores:
   owner_ticket: PMAT-2120
   removed_by: '2027-01-31'
   reason: unic-emoji-char, via rustpython-parser. Crate name recovered from cargo-deny output.
-    MEASURED live 2026-09-20 by the removal test. Renewed 2026-11-09 to 2027-01-31: still reached via rustpython-parser 0.4, no replacement landed (PMAT-2120).
+    MEASURED live 2026-09-20 by the removal test. Renewed 2026-11-09 to 2027-01-31 because it is still reached via rustpython-parser 0.4, no replacement landed (PMAT-2120).
 - id: RUSTSEC-2025-0098
   crate: unic-ucd-version
   class: unmaintained
@@ -87,7 +87,7 @@ ignores:
   owner_ticket: PMAT-2120
   removed_by: '2027-01-31'
   reason: unic-ucd-version, via rustpython-parser. Crate name recovered from cargo-deny output.
-    MEASURED live 2026-09-20 by the removal test. Renewed 2026-11-09 to 2027-01-31: still reached via rustpython-parser 0.4, no replacement landed (PMAT-2120).
+    MEASURED live 2026-09-20 by the removal test. Renewed 2026-11-09 to 2027-01-31 because it is still reached via rustpython-parser 0.4, no replacement landed (PMAT-2120).
 - id: RUSTSEC-2025-0100
   crate: unic-ucd-ident
   class: unmaintained
@@ -96,7 +96,7 @@ ignores:
   owner_ticket: PMAT-2120
   removed_by: '2027-01-31'
   reason: unic-ucd-ident, via rustpython-parser. Crate name recovered from cargo-deny output.
-    MEASURED live 2026-09-20 by the removal test. Renewed 2026-11-09 to 2027-01-31: still reached via rustpython-parser 0.4, no replacement landed (PMAT-2120).
+    MEASURED live 2026-09-20 by the removal test. Renewed 2026-11-09 to 2027-01-31 because it is still reached via rustpython-parser 0.4, no replacement landed (PMAT-2120).
 - id: RUSTSEC-2024-0449
   crate: unsafe-libyaml
   class: unmaintained

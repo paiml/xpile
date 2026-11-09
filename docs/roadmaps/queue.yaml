@@ -347,9 +347,9 @@ updated: >-
   the Wed 18:00 freeze governed the SHIPPED artefact and no longer bind.
 invariant: never (queue has OPEN items AND main loop idle); a turn ends only on a genuine block or empty-queue+hunt-launched
 sprint:
-  window: 2026-07-26 .. 2026-07-31
-  plan: docs/specifications/sub/sprint-6day-2026-07-26.md
-  version: 0.1.618
+  window: 2026-11-09 .. 2026-11-13
+  plan: docs/specifications/sub/release-v0.1.619-plan.md
+  version: 0.1.619
   baseline_sha: 2ee3630f
   freeze: 2026-07-29T18:00 local
   tag_cut: 2026-07-30 (Thu, PINNED SHA)
