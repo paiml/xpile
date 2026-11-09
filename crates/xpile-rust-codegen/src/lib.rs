@@ -427,6 +427,17 @@ fn emit_function(out: &mut String, f: &Function) -> Result<(), CodegenError> {
     writeln!(out, " {{")?;
     let mode = function_bigint_mode(f);
     emit_block(out, &f.body, mode)?;
+    // xpile#2165 (checked AFTER the body so a body refusal, e.g. a shell command
+    // lowered into `main`, keeps its own contract-naming message): Rust accepts `fn main()` only returning `()`/`Result`/`ExitCode`
+    // and taking no parameters. `def main() -> int` used to emit `fn main() -> i64`
+    // (rustc E0277) at exit 0 — a statically certain non-compiling artifact.
+    if f.name == "main" && (!f.params.is_empty() || !matches!(f.return_type, Type::Unit)) {
+        return Err(CodegenError::Unsupported(format!(
+            "`main` must take no parameters and return None for the Rust target (rustc E0277 otherwise); got {} parameter(s), return type {:?}",
+            f.params.len(),
+            f.return_type
+        )));
+    }
     writeln!(out, "}}")?;
     Ok(())
 }
