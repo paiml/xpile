@@ -27495,3 +27495,22 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
   - kind:code
   notes: null
   epic: 2124
+- id: PMAT-2187
+  github_issue: 2187
+  item_type: task
+  title: 'advisory-expiry gate off the wall clock (pinned as_of on PR path, live clock nightly) and renew the seven expired exemptions'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-11-09T00:00:00Z
+  updated: 2026-11-09T00:00:00Z
+  spec: null
+  acceptance_criteria:
+  - 'advisory_expiry.rs judges against the ledger as_of unless XPILE_ADVISORY_LIVE_CLOCK is set (schedule only). pinned_date_makes_an_expired_exemption_red_and_a_live_one_green fails if an exemption past its removed_by stays green under a pinned date. The seven 2026-10-20 exemptions are re-measured live (no_exemption_is_dead) and renewed to 2027-01-31. Closes #2185 and #2186.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 2124

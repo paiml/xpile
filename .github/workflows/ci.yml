@@ -188,6 +188,9 @@ jobs:
       # this turns a missing binary into a RED rather than a skip, so dropping the
       # install cannot silently retire the half of the gate that does the measuring.
       XPILE_REQUIRE_CARGO_DENY: "1"
+      # PMAT-2187: the advisory-expiry gate judges against the ledger as_of on every
+      # PR and push; only the nightly schedule sets the live clock (LAB, files the night issue).
+      XPILE_ADVISORY_LIVE_CLOCK: ${{ github.event_name == 'schedule' && '1' || '' }}
     steps:
       # fetch-depth: 0 (full history AND tags) is load-bearing, not cosmetic:
       # `crates/xpile/tests/roadmap_registration.rs` (XPILE-LEDGER-001, PMAT-1345)

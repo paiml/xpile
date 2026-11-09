@@ -48,6 +48,7 @@ const MAX_WINDOW_DAYS: i64 = 90;
 #[derive(Debug, serde::Deserialize)]
 struct Ledger {
     max_window_days: i64,
+    as_of: String,
     ignores: Vec<Entry>,
 }
 
@@ -236,14 +237,30 @@ fn parse_iso(s: &str) -> Option<i64> {
     Some(days_from_civil(y, m, d))
 }
 
-/// Today, in whole UTC days. UTC and not local: a gate whose verdict depends on
-/// where it runs is a gate you eventually argue with.
-fn today_utc_days() -> i64 {
+/// The wall clock, in whole UTC days. Read ONLY when `XPILE_ADVISORY_LIVE_CLOCK`
+/// is set (the nightly schedule). UTC and not local.
+fn wall_clock_days() -> i64 {
     let secs = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
-        .expect("PMAT-2120: system clock is before the epoch")
+        .expect("PMAT-2187: system clock is before the epoch")
         .as_secs() as i64;
     secs / 86_400
+}
+
+/// PMAT-2187: the day this gate judges against. The REQUIRED PR gate is
+/// deterministic: it reads the ledger's pinned `as_of`, never the clock, so main
+/// cannot go red by calendar. The nightly run sets `XPILE_ADVISORY_LIVE_CLOCK=1`
+/// and judges against the real date (a LAB check: it opens the night issue).
+fn today_utc_days() -> i64 {
+    if std::env::var("XPILE_ADVISORY_LIVE_CLOCK").is_ok_and(|v| !v.is_empty()) {
+        return wall_clock_days();
+    }
+    pinned_day(&ledger().as_of)
+}
+
+fn pinned_day(as_of: &str) -> i64 {
+    parse_iso(as_of)
+        .unwrap_or_else(|| panic!("PMAT-2187: {LEDGER} as_of {as_of:?} is not an ISO date"))
 }
 
 // ------------------------------------------------ the checks, over data
@@ -582,4 +599,37 @@ fn cargo_deny() -> Option<PathBuf> {
         return Some(PathBuf::from("cargo-deny"));
     }
     None
+}
+
+// ------------------------------------------- PMAT-2187: discrimination, no clock
+
+/// The pinned date discriminates: the shipped ledger is green at its own `as_of`
+/// and RED one day past the earliest `removed_by`. Neither side reads the clock.
+#[test]
+fn pinned_date_makes_an_expired_exemption_red_and_a_live_one_green() {
+    let l = ledger();
+    let pinned = pinned_day(&l.as_of);
+    assert!(
+        expired(&l.ignores, pinned).is_empty(),
+        "ledger red at its own as_of"
+    );
+    let earliest = l
+        .ignores
+        .iter()
+        .filter_map(|e| parse_iso(&e.removed_by))
+        .min()
+        .expect("PMAT-2187: ledger has no readable removed_by");
+    let out = expired(&l.ignores, earliest + 1);
+    assert!(
+        !out.is_empty(),
+        "an exemption past its removed_by must go red under a pinned date"
+    );
+}
+
+#[test]
+fn the_required_gate_defaults_to_the_pinned_date_not_the_clock() {
+    if std::env::var("XPILE_ADVISORY_LIVE_CLOCK").is_ok_and(|v| !v.is_empty()) {
+        return; // nightly run: live clock is the point
+    }
+    assert_eq!(today_utc_days(), pinned_day(&ledger().as_of));
 }
