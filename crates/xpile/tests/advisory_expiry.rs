@@ -45,6 +45,10 @@ const REQUIRE: &str = "XPILE_REQUIRE_CARGO_DENY";
 /// the gate refuses a ledger whose declaration disagrees with this constant.
 const MAX_WINDOW_DAYS: i64 = 90;
 
+/// Days before `removed_by` at which the expiry check starts failing, so a
+/// promise coming due is a scheduled red two weeks out, never a surprise.
+const WARN_DAYS: i64 = 14;
+
 #[derive(Debug, serde::Deserialize)]
 struct Ledger {
     max_window_days: i64,
@@ -398,6 +402,15 @@ fn thin_refuses_a_missing_owner_a_missing_crate_and_a_short_reason() {
 }
 
 #[test]
+fn warning_window_fails_exactly_warn_days_before_the_date() {
+    let today = days_from_civil(2026, 9, 20);
+    let on_edge = entry("RUSTSEC-2024-0001", "2026-10-04"); // today + 14: still fine
+    let inside = entry("RUSTSEC-2024-0002", "2026-10-03"); // today + 13: warns
+    assert!(expired(&[on_edge], today + WARN_DAYS).is_empty());
+    assert_eq!(expired(&[inside], today + WARN_DAYS).len(), 1);
+}
+
+#[test]
 fn expired_refuses_yesterday_accepts_today_and_counts_unreadable_as_expired() {
     let today = days_from_civil(2026, 9, 20);
     let e = [
@@ -487,10 +500,12 @@ fn every_entry_names_a_crate_an_owner_and_a_ticket() {
 
 #[test]
 fn no_exemption_is_past_its_removed_by() {
-    let expired = expired(&ledger().ignores, today_utc_days());
+    // Warning window: fail WARN_DAYS before the date, so the red lands as a
+    // scheduled ticket two weeks out and never as a surprise on an unrelated PR.
+    let expired = expired(&ledger().ignores, today_utc_days() + WARN_DAYS);
     assert!(
         expired.is_empty(),
-        "PMAT-2120 EXEMPTION EXPIRED: {} past their removed_by: {expired:#?}\n\n\
+        "PMAT-2120 EXEMPTION EXPIRES WITHIN {WARN_DAYS} DAYS (or already expired): {} past their removed_by: {expired:#?}\n\n\
          This is the promise coming due, not a flaky gate. Either the advisory was \
          resolved — drop the ignore and the entry — or it was not, in which case \
          re-review it and move the date DELIBERATELY, naming what changed. An \
