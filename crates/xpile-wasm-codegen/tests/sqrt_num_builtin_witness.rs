@@ -465,9 +465,10 @@ fn sqrt_of_a_negative_traps_where_cpython_raises() {
         .arg(format!("{src}\nneg()\n"))
         .output();
     if let Ok(out) = py {
+        // Match the exception TYPE, not its text: CPython 3.14 reworded the message
+        // ("math domain error" -> "expected a nonnegative input, got -1.0").
         assert!(
-            !out.status.success()
-                && String::from_utf8_lossy(&out.stderr).contains("math domain error"),
+            !out.status.success() && String::from_utf8_lossy(&out.stderr).contains("ValueError"),
             "CPython must RAISE ValueError on math.sqrt(-1.0): {out:?}"
         );
     }

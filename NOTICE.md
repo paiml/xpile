@@ -14,10 +14,8 @@ ran exactly one check kind — `cargo deny check advisories` — so
 
 ## This file makes no license decision
 
-What to do about the LGPL-3.0-only copyleft in the shipped binary is an **owner
-decision**, recorded as `lgpl-in-shipped-binary` in `docs/roadmaps/queue.yaml`.
-This file surfaces the facts; it does not accept them, waive them, or claim
-compliance. Nothing here is legal advice.
+There is no LGPL-3.0-only copyleft in the shipped binary (see below). This file
+surfaces the facts; it does not accept them, waive them, or claim compliance. Nothing here is legal advice.
 
 ## Derive it yourself — do not trust the table, re-run the commands
 
@@ -51,11 +49,6 @@ binary), `build-only` (executed by a build script, not linked), or `dev-only`
 
 | crate | version | license | linkage | reached via |
 | --- | --- | --- | --- | --- |
-| malachite | 0.4.22 | LGPL-3.0-only | binary | malachite-bigint -> rustpython-parser -> depyler-frontend -> xpile-core -> xpile |
-| malachite-base | 0.4.22 | LGPL-3.0-only | binary | malachite -> malachite-bigint -> rustpython-parser -> depyler-frontend -> xpile-core -> xpile |
-| malachite-bigint | 0.2.3 | LGPL-3.0-only | binary | rustpython-ast -> rustpython-parser -> depyler-frontend -> xpile-core -> xpile |
-| malachite-nz | 0.4.22 | LGPL-3.0-only | binary | malachite -> malachite-bigint -> rustpython-parser -> depyler-frontend -> xpile-core -> xpile |
-| malachite-q | 0.4.22 | LGPL-3.0-only | binary | malachite -> malachite-bigint -> rustpython-parser -> depyler-frontend -> xpile-core -> xpile |
 | hexf-parse | 0.2.1 | CC0-1.0 | binary | naga -> wgpu -> xpile-spirv-codegen and xpile-wgsl-codegen -> xpile-core -> xpile |
 | foldhash | 0.1.5 | Zlib | binary | hashbrown 0.15.5 -> gpu-descriptor -> wgpu-hal -> wgpu -> xpile-spirv-codegen -> xpile-core -> xpile |
 | foldhash | 0.2.0 | Zlib | binary | hashbrown 0.16.1 -> gpu-allocator -> wgpu-hal -> wgpu -> xpile-spirv-codegen -> xpile-core -> xpile |
@@ -63,25 +56,9 @@ binary), `build-only` (executed by a build script, not linked), or `dev-only`
 
 <!-- XPILE-LICENSE-DISCLOSURE-END -->
 
-## The LGPL-3.0-only rows are the ones to read
+## No LGPL in the binary
 
-The `malachite` family is **copyleft, and it is in the binary**. It is not a
-test fixture and not a build script: `rustpython-parser` (the Python parser
-behind `depyler-frontend`) depends on `malachite-bigint` for Python's arbitrary-
-precision integers, and `depyler-frontend` is a normal dependency of
-`xpile-core`, which is a normal dependency of `xpile`. Every published
-`xpile` binary and every `cargo install xpile` links it.
-
-LGPL-3.0-only §4/§5 attach obligations to distributing a work that links an
-LGPL library — at minimum notice and a route for the recipient to relink against
-a modified version of the library. A statically-linked Rust binary makes that
-non-trivial. The three responses on the table, none of them taken here:
-
-1. **Accept and document** — ship this NOTICE with the binary and the published
-   crates, and provide the object files or the full source needed to relink.
-2. **Replace `rustpython-parser`** — removes the whole family at once. Measured
-   as multi-month by the project assessment; it is the frontend's parser.
-3. **Neither** — the current state, now at least visible instead of unknown.
+The `malachite` family (LGPL-3.0-only) was removed (operator ruling 2026-10-15: no LGPL in xpile, never allow-listed). `rustpython-parser` now builds with its `num-bigint` feature (MIT OR Apache-2.0) instead of the default `malachite-bigint`. `crates/xpile/tests/dependency_license_policy.rs` fails if any `malachite*` package returns to `Cargo.lock` or an LGPL row appears here.
 
 The other rows are permissive and are listed for completeness, not risk:
 CC0-1.0 is a public-domain dedication and Zlib is a short permissive licence;
