@@ -261,8 +261,11 @@ fn workspace_version() -> String {
 /// Only then may the leading heading stand in for `[Unreleased]`. Mirrors
 /// `changelog_freshness::leading_release_heading_verdict`.
 fn release_commit_heading_leads(cl: &str, version: &str, newest_tag: &str) -> bool {
-    let secs = sections(cl);
-    let Some((lead, _)) = secs.first() else {
+    let Some(i) = cl.find("\n## [") else {
+        return false;
+    };
+    let rest = &cl[i + 5..];
+    let Some(lead) = rest.find(']').map(|e| &rest[..e]) else {
         return false;
     };
     lead == version && matches!((semver(lead), semver(newest_tag)), (Some(x), Some(t)) if x > t)
