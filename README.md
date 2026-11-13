@@ -29,7 +29,7 @@ transpile time with a reason instead of emitting code that silently diverges.
 
 ## Quickstart
 
-```text
+```console
 cargo install xpile
 ```
 
@@ -39,7 +39,7 @@ def factorial(n: int) -> int:
     return 1 if n <= 1 else n * factorial(n - 1)
 ```
 
-```text
+```console
 $ xpile transpile factorial.py
 // xpile-generated from Python module factorial
 
@@ -75,7 +75,7 @@ More runnable programs are in [`examples/`](https://github.com/paiml/xpile/tree/
 
 One meta-HIR, many backends:
 
-```text
+```console
 $ xpile transpile factorial.py --target ruchy   # → Ruchy   (compiles to Rust)
 $ xpile transpile factorial.py --target lean    # → Lean 4  (def + citation docstring)
 $ xpile transpile factorial.py --target wasm    # → native WebAssembly text
@@ -289,7 +289,7 @@ cargo test --workspace
 
 ## Install
 
-```text
+```console
 cargo install xpile
 ```
 
@@ -299,7 +299,7 @@ Requires Rust 1.93+. For source builds and the optional dev tooling (`pv`,
 
 ## Usage
 
-```text
+```console
 $ xpile info                                  # list registered frontends/backends
 $ xpile transpile factorial.py                # Python → Rust (default)
 $ xpile transpile factorial.py --target ruchy # Python → Ruchy
@@ -341,7 +341,7 @@ annotation-free output; the library equivalent is
 that crate compiles to a **single portable WebAssembly binary** that runs on any
 OS/arch under a WASI runtime — no libc, architecture, or OS baked in:
 
-```text
+```console
 $ xpile transpile examples/proven-model/model.py --emit-crate /tmp/model
 $ cd /tmp/model && cargo build --release --target wasm32-wasip1
 $ wasmtime run target/wasm32-wasip1/release/model.wasm    # output matches CPython
@@ -363,11 +363,12 @@ Full CLI reference and tutorials: **<https://paiml.github.io/xpile/>**.
 
 This file is graded by `contracts/readme-root.yaml` (a `readme:Readme` SHACL
 shape) via `pv-readme --check`, falsified by `tests/readme-shape-falsifier.sh`
-(paiml/xpile#2193). Every runnable-looking command above is fenced as `text`: the
-six `gate`/`workspace-test` lines in [CI gates](#ci-gates) are quoted verbatim
-from CI, but `book_published_command_witness` executes every shell fence in an
-empty scratch directory, where a workspace command cannot succeed. So this file
-makes no shell-fence claim, and the shape refuses any that is added unrun.
+(paiml/xpile#2193). The `xpile` commands above are in `console` fences, which
+`book_published_command_witness` executes in an empty scratch directory and
+`pv-readme` does not read as claims. The six `gate`/`workspace-test` lines in
+[CI gates](#ci-gates) are quoted verbatim from CI in a `text` fence, because a
+workspace command cannot succeed in that scratch directory. So this file makes
+no `bash`-fence claim, and the shape refuses any that is added unrun.
 
 ## Project family
 
