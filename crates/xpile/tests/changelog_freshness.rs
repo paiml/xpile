@@ -266,6 +266,88 @@ fn unreleased_section_is_never_an_empty_heading() {
 
 // ── 2. Static: the leading heading and the workspace version must agree ─────
 
+/// `major.minor.patch` of a bare or `v`-prefixed release label.
+fn semver(s: &str) -> Option<(u64, u64, u64)> {
+    let mut it = s.strip_prefix('v').unwrap_or(s).split('.');
+    let t = (
+        it.next()?.parse().ok()?,
+        it.next()?.parse().ok()?,
+        it.next()?.parse().ok()?,
+    );
+    it.next().is_none().then_some(t)
+}
+
+/// Is `## [leading]` an acceptable first heading? `[Unreleased]` always is. A
+/// release heading `[X]` is accepted ONLY when X equals the workspace version
+/// AND X is a semver strictly greater than the newest `v*` tag (i.e. the
+/// release commit, before its tag exists). With no tag information (no git)
+/// the second condition cannot be measured and is not applied.
+fn leading_release_heading_verdict(
+    leading: &str,
+    version: &str,
+    newest_tag: Option<&str>,
+) -> Result<(), String> {
+    if leading == "Unreleased" {
+        return Ok(());
+    }
+    if leading != version {
+        return Err(format!(
+            "CHANGELOG.md's first heading is `## [{leading}]` but Cargo.toml \
+             [workspace.package] version is `{version}`.\n\n\
+             The first heading must be either `[Unreleased]` (mid-cycle) or \
+             `[{version}]` (the release commit, which bumps the version and promotes \
+             the heading TOGETHER). A mismatch means one of the two edits was made \
+             without the other."
+        ));
+    }
+    if let Some(tag) = newest_tag {
+        let (Some(x), Some(t)) = (semver(leading), semver(tag)) else {
+            return Err(format!(
+                "cannot compare `[{leading}]` with newest tag `{tag}` as semver"
+            ));
+        };
+        if x <= t {
+            return Err(format!(
+                "CHANGELOG.md leads with `## [{leading}]` but that version is not \
+                 greater than the newest tag `{tag}`: a released heading may lead \
+                 only on the release commit, before its tag exists. Open \
+                 `## [Unreleased]` above it."
+            ));
+        }
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod leading_heading_planted {
+    use super::*;
+
+    #[test]
+    fn accepts_unreleased_and_a_release_heading_ahead_of_the_tag() {
+        assert!(leading_release_heading_verdict("Unreleased", "0.1.619", Some("v0.1.618")).is_ok());
+        assert!(leading_release_heading_verdict("0.1.619", "0.1.619", Some("v0.1.618")).is_ok());
+        assert!(leading_release_heading_verdict("0.1.619", "0.1.619", Some("v0.1.99")).is_ok());
+    }
+
+    #[test]
+    fn planted_heading_not_equal_to_cargo_version_fails() {
+        assert!(leading_release_heading_verdict("0.1.620", "0.1.619", Some("v0.1.618")).is_err());
+    }
+
+    #[test]
+    fn planted_heading_not_above_newest_tag_fails() {
+        // equal to the tag, and below it (also guards a lexical compare: 0.1.9 vs 0.1.10)
+        assert!(leading_release_heading_verdict("0.1.618", "0.1.618", Some("v0.1.618")).is_err());
+        assert!(leading_release_heading_verdict("0.1.9", "0.1.9", Some("v0.1.10")).is_err());
+    }
+
+    #[test]
+    fn planted_missing_heading_fails() {
+        // an empty / absent leading label is neither Unreleased nor the version
+        assert!(leading_release_heading_verdict("", "0.1.619", Some("v0.1.618")).is_err());
+    }
+}
+
 #[test]
 fn leading_heading_tracks_the_workspace_version() {
     let md = read("CHANGELOG.md");
@@ -277,16 +359,10 @@ fn leading_heading_tracks_the_workspace_version() {
     );
     let version = workspace_version();
     let (_, leading) = &hs[0];
-
-    assert!(
-        leading == "Unreleased" || *leading == version,
-        "CHANGELOG.md's first heading is `## [{leading}]` but Cargo.toml \
-         [workspace.package] version is `{version}`.\n\n\
-         The first heading must be either `[Unreleased]` (mid-cycle) or \
-         `[{version}]` (the release commit, which bumps the version and promotes \
-         the heading TOGETHER). A mismatch means one of the two edits was made \
-         without the other."
-    );
+    let newest_tag = git(&["describe", "--tags", "--abbrev=0", "--match", "v*"]);
+    if let Err(msg) = leading_release_heading_verdict(leading, &version, newest_tag.as_deref()) {
+        panic!("{msg}");
+    }
 
     if leading == "Unreleased" {
         assert!(

@@ -230,6 +230,56 @@ fn no_released_section_claims_an_arc_that_is_not_in_its_tag() {
     );
 }
 
+fn semver(s: &str) -> Option<(u64, u64, u64)> {
+    let mut it = s.strip_prefix('v').unwrap_or(s).split('.');
+    let t = (
+        it.next()?.parse().ok()?,
+        it.next()?.parse().ok()?,
+        it.next()?.parse().ok()?,
+    );
+    it.next().is_none().then_some(t)
+}
+
+fn workspace_version() -> String {
+    let manifest = std::fs::read_to_string(workspace_root().join("Cargo.toml")).unwrap_or_default();
+    let mut in_table = false;
+    for line in manifest.lines() {
+        let t = line.trim();
+        if t.starts_with('[') {
+            in_table = t == "[workspace.package]";
+        } else if in_table {
+            if let Some(v) = t.strip_prefix("version").and_then(|r| r.split('"').nth(1)) {
+                return v.to_string();
+            }
+        }
+    }
+    String::new()
+}
+
+/// The release commit promotes `[Unreleased]` to `[X]` where X is the Cargo
+/// version and a semver strictly greater than the newest tag (no tag yet).
+/// Only then may the leading heading stand in for `[Unreleased]`. Mirrors
+/// `changelog_freshness::leading_release_heading_verdict`.
+fn release_commit_heading_leads(cl: &str, version: &str, newest_tag: &str) -> bool {
+    let secs = sections(cl);
+    let Some((lead, _)) = secs.first() else {
+        return false;
+    };
+    lead == version && matches!((semver(lead), semver(newest_tag)), (Some(x), Some(t)) if x > t)
+}
+
+#[test]
+fn planted_release_heading_stand_in_is_strict() {
+    let cl = "# C\n\n## [0.1.619] - 2026-01-01\n\n- x\n\n## [0.1.618] - 2026-01-00\n";
+    assert!(release_commit_heading_leads(cl, "0.1.619", "v0.1.618"));
+    assert!(!release_commit_heading_leads(cl, "0.1.620", "v0.1.618")); // != Cargo version
+    assert!(!release_commit_heading_leads(cl, "0.1.619", "v0.1.619")); // X == tag
+    assert!(!release_commit_heading_leads(cl, "0.1.619", "v0.1.700")); // X < tag
+    assert!(!release_commit_heading_leads(
+        "# C\n", "0.1.619", "v0.1.618"
+    )); // missing heading
+}
+
 #[test]
 fn an_unreleased_heading_exists_whenever_work_has_merged_since_the_newest_tag() {
     // THE POKA-YOKE FOR THE ROOT CAUSE. The release commit is allowed to leave no
@@ -246,7 +296,9 @@ fn an_unreleased_heading_exists_whenever_work_has_merged_since_the_newest_tag() 
         return;
     };
     let n = since.lines().filter(|l| !l.trim().is_empty()).count();
-    let has = changelog().contains("\n## [Unreleased]");
+    let cl = changelog();
+    let has = cl.contains("\n## [Unreleased]")
+        || release_commit_heading_leads(&cl, &workspace_version(), &newest);
     assert!(
         n == 0 || has,
         "{n} commit(s) have merged since {newest} and CHANGELOG.md has no `## [Unreleased]` \
