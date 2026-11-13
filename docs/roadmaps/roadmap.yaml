@@ -27514,3 +27514,60 @@ SCOPE, honestly. The published crate is unaffected — one tree, one target dir,
   - kind:code
   notes: null
   epic: 2124
+- id: PMAT-2194
+  github_issue: 2194
+  item_type: task
+  title: readme-root.yaml SHACL shape for README.md
+  status: inprogress
+  priority: medium
+  assigned_to: null
+  created: 2026-11-13T14:13:48Z
+  updated: 2026-11-13T14:13:48Z
+  spec: null
+  acceptance_criteria:
+  - pv-readme SHACL contract
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:docs
+  notes: null
+  epic: 2193
+- id: PMAT-2195
+  github_issue: 2195
+  item_type: task
+  title: 'Rewrite README.md: frontmatter, claim-fence triage, pv-readme Contract section'
+  status: inprogress
+  priority: medium
+  assigned_to: null
+  created: 2026-11-13T14:13:48Z
+  updated: 2026-11-13T14:13:48Z
+  spec: null
+  acceptance_criteria:
+  - pv-readme SHACL contract
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:docs
+  notes: null
+  epic: 2193
+- id: PMAT-2196
+  github_issue: 2196
+  item_type: task
+  title: readme-shape-falsifier.sh + LAB-only readme-shape-lab.yml
+  status: inprogress
+  priority: medium
+  assigned_to: null
+  created: 2026-11-13T14:13:48Z
+  updated: 2026-11-13T14:13:48Z
+  spec: null
+  acceptance_criteria:
+  - pv-readme SHACL contract
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:docs
+  notes: null
+  epic: 2193

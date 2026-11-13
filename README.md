@@ -1,3 +1,12 @@
+---
+schema_version: "1.0"
+kind: cli
+entrypoints: [crates/xpile]
+contract_count: 36
+---
+
+<!-- CONTRACT_COUNT_START -->36<!-- CONTRACT_COUNT_END -->
+
 <p align="center">
   <img src="docs/assets/hero.svg" alt="xpile architecture: a code lane (Python, C, Shell, WebAssembly → meta-HIR → Rust, Ruchy, PTX, WGSL, SPIR-V, WebAssembly, Lean 4, Shell, forjar) and a proof lane (LaTeX → contracts (YAML) → Lean 4 thm, LaTeX), whose two contract backends are registered scaffolds that render nothing yet" width="100%"/>
 </p>
@@ -20,7 +29,7 @@ transpile time with a reason instead of emitting code that silently diverges.
 
 ## Quickstart
 
-```bash
+```console
 cargo install xpile
 ```
 
@@ -30,7 +39,7 @@ def factorial(n: int) -> int:
     return 1 if n <= 1 else n * factorial(n - 1)
 ```
 
-```bash
+```console
 $ xpile transpile factorial.py
 // xpile-generated from Python module factorial
 
@@ -66,7 +75,7 @@ More runnable programs are in [`examples/`](https://github.com/paiml/xpile/tree/
 
 One meta-HIR, many backends:
 
-```bash
+```console
 $ xpile transpile factorial.py --target ruchy   # → Ruchy   (compiles to Rust)
 $ xpile transpile factorial.py --target lean    # → Lean 4  (def + citation docstring)
 $ xpile transpile factorial.py --target wasm    # → native WebAssembly text
@@ -259,15 +268,28 @@ Every pull request runs:
 Two jobs are merge-blocking: **`gate`** (the checklist above minus tests) and
 **`workspace-test`** (the full suite, including the execution witnesses). The
 other six — `kani`, `lake-build`, `docs`, `wasi`, `lean-models`,
-`shader-validate` — run on every PR and go red on a real regression, but are
-**advisory**: they do not block a merge. Notably that includes the proof lane,
-so a failing Kani harness or Lean build is visible without being blocking; see
+`shader-validate` — run only on the nightly schedule and on a manual dispatch,
+never on a pull request, so a red one never blocks a merge. Notably that
+includes the proof lane, so a failing Kani harness or Lean build is visible
+without being blocking; see
 [`docs/status/enforcement-handoff.md`](https://github.com/paiml/xpile/blob/main/docs/status/enforcement-handoff.md) §2.
 Workflow: [`.github/workflows/ci.yml`](https://github.com/paiml/xpile/blob/main/.github/workflows/ci.yml).
 
+These six commands are the ones `gate` and `workspace-test` run on every pull
+request and every push to `main`, verbatim:
+
+```text
+cargo fmt --all -- --check
+cargo check --workspace
+cargo clippy --workspace --all-targets -- -D warnings
+pv lint contracts/
+cargo deny check advisories
+cargo test --workspace
+```
+
 ## Install
 
-```bash
+```console
 cargo install xpile
 ```
 
@@ -277,7 +299,7 @@ Requires Rust 1.93+. For source builds and the optional dev tooling (`pv`,
 
 ## Usage
 
-```bash
+```console
 $ xpile info                                  # list registered frontends/backends
 $ xpile transpile factorial.py                # Python → Rust (default)
 $ xpile transpile factorial.py --target ruchy # Python → Ruchy
@@ -319,7 +341,7 @@ annotation-free output; the library equivalent is
 that crate compiles to a **single portable WebAssembly binary** that runs on any
 OS/arch under a WASI runtime — no libc, architecture, or OS baked in:
 
-```bash
+```console
 $ xpile transpile examples/proven-model/model.py --emit-crate /tmp/model
 $ cd /tmp/model && cargo build --release --target wasm32-wasip1
 $ wasmtime run target/wasm32-wasip1/release/model.wasm    # output matches CPython
@@ -336,6 +358,17 @@ plain `HashMap` iterates non-deterministically). Add `indexmap = "2"` to the
 transpiled crate's `Cargo.toml` if its output uses any `dict`.
 
 Full CLI reference and tutorials: **<https://paiml.github.io/xpile/>**.
+
+## pv-readme Contract
+
+This file is graded by `contracts/readme-root.yaml` (a `readme:Readme` SHACL
+shape) via `pv-readme --check`, falsified by `tests/readme-shape-falsifier.sh`
+(paiml/xpile#2193). The `xpile` commands above are in `console` fences, which
+`book_published_command_witness` executes in an empty scratch directory and
+`pv-readme` does not read as claims. The six `gate`/`workspace-test` lines in
+[CI gates](#ci-gates) are quoted verbatim from CI in a `text` fence, because a
+workspace command cannot succeed in that scratch directory. So this file makes
+no `bash`-fence claim, and the shape refuses any that is added unrun.
 
 ## Project family
 
