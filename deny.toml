@@ -42,6 +42,11 @@ allow = [
     "Unicode-3.0",
 ]
 confidence-threshold = 0.93
+exceptions = [
+    { allow = ["Zlib"], crate = "foldhash" },
+    { allow = ["CC0-1.0"], crate = "hexf-parse" },
+    { allow = ["CC0-1.0"], crate = "tiny-keccak" },
+]
 
 [bans]
 multiple-versions = "warn"
