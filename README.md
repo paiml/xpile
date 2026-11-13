@@ -278,7 +278,7 @@ Workflow: [`.github/workflows/ci.yml`](https://github.com/paiml/xpile/blob/main/
 These six commands are the ones `gate` and `workspace-test` run on every pull
 request and every push to `main`, verbatim:
 
-```bash
+```text
 cargo fmt --all -- --check
 cargo check --workspace
 cargo clippy --workspace --all-targets -- -D warnings
@@ -363,9 +363,11 @@ Full CLI reference and tutorials: **<https://paiml.github.io/xpile/>**.
 
 This file is graded by `contracts/readme-root.yaml` (a `readme:Readme` SHACL
 shape) via `pv-readme --check`, falsified by `tests/readme-shape-falsifier.sh`
-(paiml/xpile#2193). Every runnable-looking command above is either one of the
-six `gate`/`workspace-test` lines quoted verbatim in [CI gates](#ci-gates), or
-is fenced as `text` because no merge-path CI step runs it.
+(paiml/xpile#2193). Every runnable-looking command above is fenced as `text`: the
+six `gate`/`workspace-test` lines in [CI gates](#ci-gates) are quoted verbatim
+from CI, but `book_published_command_witness` executes every shell fence in an
+empty scratch directory, where a workspace command cannot succeed. So this file
+makes no shell-fence claim, and the shape refuses any that is added unrun.
 
 ## Project family
 

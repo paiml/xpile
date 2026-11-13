@@ -20,6 +20,12 @@ metadata:
     every entrypoint must exist, and the contract count it prints must equal census.json n_files.
   references:
     - 'paiml/forjar#1017, paiml/bashrs#512, paiml/paiml-mcp-agent-toolkit#1757, paiml/infra#4337, paiml/rmedia#2706 (same pattern)'
+    - >-
+      readme:verifiedCommand is minCount 0 here. crates/xpile/tests/book_published_command_witness.rs
+      executes every shell-fence command of README.md in an empty scratch directory, so a claim fence
+      holding a merge-path CI line (cargo test --workspace) fails that test for want of a Cargo.toml.
+      The two gates read a shell fence in opposite ways; README.md therefore carries no shell fence, and
+      an added one is still refused unless a merge-path step runs it.
 
 entity:
   type: readme
@@ -32,7 +38,7 @@ shape:
     - {path: readme:schemaVersion, minCount: 1, maxCount: 1, pattern: "^[0-9]+\\.[0-9]+$"}
     - {path: readme:kind, minCount: 1, maxCount: 1, in: [library, cli, service, spec]}
     - {path: readme:entrypoint, minCount: 1, resolves: path}
-    - {path: readme:verifiedCommand, minCount: 1, resolves: ci-step}
+    - {path: readme:verifiedCommand, minCount: 0, resolves: ci-step}
     - {path: readme:section, minCount: 3}
     - {path: readme:contractCount, maxCount: 1, resolves: census}
 
