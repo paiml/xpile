@@ -374,12 +374,17 @@ const ENFORCEMENT_VERBS: &[&str] = &[
     "requires",
 ];
 
-/// `[Unreleased]` only, for `CHANGELOG.md`; the whole file otherwise.
+/// For `CHANGELOG.md`, the text that ships next; the whole file otherwise.
+///
+/// That is the `[Unreleased]` section PLUS the first released section under it
+/// (the release commit opens a stub `[Unreleased]` above the section it just
+/// promoted, and that section is untagged until the tag is cut). When
+/// `[Unreleased]` is absent, the leading released section alone. Every older
+/// section is excluded.
 ///
 /// A released section is a dated record — `[0.1.617]` says ruleset `13878864`
 /// required both contexts, which was true when it was measured on 2026-07-26 and
 /// is exactly the kind of frozen numeral this repo deliberately does not rewrite.
-/// `[Unreleased]` is the text that ships next.
 fn present_tense_surface(rel: &str, text: &str) -> String {
     if rel != "CHANGELOG.md" {
         return text.to_string();
@@ -395,9 +400,17 @@ fn present_tense_surface(rel: &str, text: &str) -> String {
         .or_else(|| text.find("\n## [").map(|i| i + 1))
         .expect("CHANGELOG.md has no `## [...]` heading at a line start");
     let after = &text[start..];
+    // The release commit opens a stub `[Unreleased]` above the section it just
+    // promoted, and that section is untagged until the tag is cut — so the text
+    // that ships next is the stub PLUS the first released heading under it. Read
+    // as `[Unreleased]` alone, a release roll left this scoper on 431 bytes. The
+    // region ends at the second heading when it opens at `[Unreleased]`, at the
+    // first otherwise (the stub-less case above).
+    let skip = usize::from(after.starts_with("## [Unreleased]"));
     let end = after[1..]
-        .find("\n## [")
-        .map(|i| i + 1)
+        .match_indices("\n## [")
+        .nth(skip)
+        .map(|(i, _)| i + 1)
         .unwrap_or(after.len());
     after[..end].to_string()
 }
