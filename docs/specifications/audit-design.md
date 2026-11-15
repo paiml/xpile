@@ -16,10 +16,10 @@ The deadline is enforced by a CI test (`crates/xpile/tests/sota_dossier_deadline
 |---|---|---|
 | 2026-Q2 (initial) | 2026-05-15 | ✅ shipped (§1–§6 below) |
 | 2026-Q3 | 2026-08-15 | ✅ shipped (§7 below, 2026-06-12) |
-| 2026-Q4 | 2026-11-15 | ⏳ pending |
+| 2026-Q4 | 2026-11-15 | ✅ shipped (§8 below, 2026-11-15) |
 | 2027-Q1 | 2027-02-15 | ⏳ pending |
 
-**Next Dossier Deadline: 2026-11-15**
+**Next Dossier Deadline: 2027-02-15**
 
 (The deadline string above is parsed verbatim by the CI gate; do not reword without also updating the regex in the deadline test.)
 
@@ -204,3 +204,38 @@ The point of this section is calibration, not defeatism: xpile is a young (v0.1.
 ### 7.5 Action carried into 2026-Q4
 
 The highest-leverage *epistemic* item is **R6**: close the capability-without-contract gap (author `C-C-INT-ARITH` + `C-XLATE-PY-DICT-TO-HASHMAP`, grandfather the Diamond gate) so §7.3's falsified claim is restored to true. The highest-leverage *capability* item is **R10** (early returns), which lifts the dominant structural ceiling. Both are specified in spec §30.
+---
+
+## 8. 2026-Q4 SOTA-Gap Dossier (XPILE-SOTA-001, published 2026-11-15)
+
+Per §0, this is the scheduled 2026-Q4 republication. It enumerates (1) external systems that beat xpile on at least one axis since the 2026-Q3 dossier, (2) which load-bearing hypothesis from §5 is newly stressed, and (3) falsifier status. It was written on the deadline day, after the CI gate (`crates/xpile/tests/sota_dossier_deadline.rs`) went red on it: F6 did fire, and this section is the remedy, not a bump. Every external claim below was read from the cited URL on 2026-11-15; anything that could not be fetched and read is marked `not_measured` rather than asserted.
+
+### 8.1 Where xpile moved since 2026-Q3
+
+Measured from the tree at this commit. The last tag is `v0.1.618` (tagged 2026-07-30; `CHANGELOG.md` heading dated 2026-07-31); the `[Unreleased]` section of `CHANGELOG.md` carries everything merged since. The §7.3 integrity gap is closed on disk: `contracts/c-int-arith-v1.yaml` and `contracts/xlate-py-dict-to-hashmap-v1.yaml` now exist (R6 / PMAT-475), and `contracts/*.yaml` holds 35 contracts. The window's theme is **making the proofs bite**: PMAT-1512 (#2112) found that 489 Lean theorems and 108 Kani proofs could not be turned red by a wrong lowering because none was built against xpile's shipped code, and bound one in; PMAT-2163 (`CHANGELOG.md` `[Unreleased]`) then lets a contract count Semantic votes only for theorems bound to shipped code (`quorum_semantic: shipped-bound`), piloted on two contracts (`C-PY-INT-ARITH` Semantic 42 → 3, `C-BASHRS-POSIX-IDEMPOTENCE` 18 → 1), with totals unchanged at 26 QUORUM and 9 PARTIAL. `crates/xpile/tests/runtime_property_ledger_witness.rs` still lists 7 `Residue` rows, i.e. 7 of 35 contracts with no property-specific Runtime witness (unchanged from §7.2). Re-measured coverage of the transpile surface this quarter (early returns, supported subset size): `not_measured: no corpus-wide run was executed for this dossier`; the `CHANGELOG.md` entry PMAT-502bm records guard-clause early returns, but that is a record, not a measurement made now.
+
+### 8.2 External systems that beat xpile on ≥1 axis
+
+The calibration stance of §7.2 stands: xpile is a v0.1.x research workbench, and mature systems beat it on breadth and scale. Four external systems are recorded, each with the axis on which it beats xpile.
+
+- **Aeneas + Charon (Rust → Lean extraction) in production use — beats xpile on verification of the *shipped* program, kernel-checked.** Microsoft Research's SymCrypt blog (published 2026-07-13) reports complete proofs for SymCrypt's Rust ML-KEM and SHA-3 code, already in Windows insider builds; the proofs relate the Rust that ships (including SIMD intrinsics and x86-64 / aarch64 dispatch paths) to Lean specifications derived from the standards, with Aeneas translating Rust's mid-level representation into a pure Lean model and Lean's kernel independently checking every proof. Source: <https://www.microsoft.com/en-us/research/blog/verifying-rust-cryptography-in-symcrypt-from-standards-to-code/>, read 2026-11-15. The post states no line counts, proof counts or verification times: `not_measured: quantitative scale of the SymCrypt effort is not published in the fetched page`. xpile's Lean lane (§7.4, PMAT-1405) elaborates *emitted* Lean and evaluates it with `decide`; it does not prove properties of a third party's shipped Rust.
+- **AI-closed Lean obligations over Aeneas/Hax extraction — beats xpile on automated proof discharge.** Klaus, Conejero and Tolmach, "A Rust-to-Lean Verification Pipeline with AI Provers: An Experience Report" (arXiv:2605.30106, submitted 2026-05-28, v2 2026-07-02; AIMACS workshop at CAV 2026) report a pipeline that takes production Rust cryptographic code through Charon/Aeneas or Hax into Lean 4 and uses AI provers (Aristotle, Aleph) to close obligations, applied to Plonky3 (FRI folding, Mersenne31 and KoalaBear arithmetic, Horner evaluation) and RISC Zero (Merkle inclusion), with every proof checked by the Lean kernel. Source: <https://arxiv.org/abs/2605.30106>, abstract read 2026-11-15. The only quantitative result in the abstract is two bounds theorems in Plonky3's `compute_log_arity_for_round` that were previously `sorry`; `not_measured: success rates and proof counts are in the full paper, which was not fetched`. xpile has no automated prover loop for its contract theorems.
+- **Verus proof-synthesis data at scale — beats xpile on proof-corpus scale for Rust.** Di et al., "Reducing the Costs of Proof Synthesis on Rust Systems by Scaling Up a Seed Training Set" (arXiv:2602.04910, submitted 2026-02-04, revised 2026-02-14; a v3 dated 2026-05-09 is listed on the page) describes VeruSyn, a synthesis pipeline whose dataset contains 6.9 million Rust programs each with a formal specification and proof for Verus, and a fine-tuned Qwen2.5-Coder-32B-Instruct model the authors say compares well against Claude Sonnet 4.5 on cost-proof tradeoff. Source: <https://arxiv.org/abs/2602.04910v2>, abstract read 2026-11-15. Benchmark scores and cost figures are in the full paper: `not_measured: not fetched`.
+- **Breadth, still (xpile loses, by design of being early): C2Rust.** The c2rust 0.22.1 README states that `c2rust transpile` "produces unsafe Rust code that closely mirrors the input C code", that safe idiomatic Rust "ultimately requires manual effort", and that its safening/refactoring work is "still in the early stages". Source: <https://docs.rs/crate/c2rust/latest/source/README.md>, read 2026-11-15. This is the same breadth gap §7.2 concedes; it is recorded because C2Rust handles C99 wholesale while xpile's C frontend takes an integer/control-flow subset. It is not a verification gap: C2Rust's own README describes testing and cross-checking, not proof. `not_measured: no head-to-head run of C2Rust and xpile on a shared corpus was made`.
+- **Not surfaced this quarter:** no fetched source describes a system that combines (a) one Meta-HIR fanning out to several targets, (b) per-construct provable-contract citations and (c) an execution-grounded stratified oracle, so the differentiator of §7.2 is unchanged. This is an absence in the sources read, not a survey of the field: `not_measured: no systematic literature search beyond the sources above`. Mentions of Verus industrial use at Amazon/Microsoft and of Google's Anneal came from search snippets only and are deliberately not claimed here.
+
+### 8.3 Hypotheses newly stressed (§5)
+
+- **Hypothesis 2 (the Oracle guarantees semantic equivalence) is the newly stressed one.** The fetched systems all discharge obligations *against a specification, checked by a proof kernel*, over the program that ships; xpile's oracle compares captured outputs on fixtures. §5 already names the failure (an LLM-synthesised bridge that passes the Oracle but is unsafe), and xpile's own PMAT-1512 finding (§8.1) shows the proof side of the same weakness: 489 Lean theorems and 108 Kani proofs were not bound to the shipped emitter. PMAT-2163 narrows the gap for two contracts; for the other 33 the older vote-counting rule still applies (`CHANGELOG.md` PMAT-2163). Status: **stressed, not falsified**; no counterexample of §5's exact form (Oracle passes, production crashes) was found or sought this quarter: `not_measured`.
+- **Hypothesis 1 (Federated Meta-HIR sufficiency):** no new external evidence in the sources read. `not_measured: single-trailing-return ceiling re-measurement, see §8.1`.
+- **Hypotheses 3 and 4:** no external work in the sources read bears on cache-key determinism or on Layer-5 hardware-emission contracts. Not stressed by anything fetched this quarter.
+
+### 8.4 Falsifier status
+
+- **F6 (missing dossier ⇒ auto-fire):** it fired. `sota_dossier_deadline_not_passed` failed on `workspace-test` with "Quarterly SOTA-gap dossier deadline (2026-11-15) has passed without a new dossier." This §8 is the remedy; the `**Next Dossier Deadline:**` line is bumped to the 2027-Q1 slot (2027-02-15) as the cadence table in §0 and `sub/provability-roadmap.md` §1.6 define it.
+- **F1–F5, F7+ from `sub/provability-roadmap.md` §1.1:** `not_measured: the full falsifier sweep was not re-run for this dossier; the only red known to the author is the F6 gate above`.
+- **Honesty note on §7.2's "7 of 35":** re-derived above from the ledger file (7 `Residue` rows, 35 contract YAMLs); both numbers are unchanged, so no contract moved from Residue to witnessed in this window.
+
+### 8.5 Action carried into 2027-Q1
+
+(1) Extend `quorum_semantic: shipped-bound` (PMAT-2163) from its two pilot contracts to the rest, so Semantic votes stop counting theorems about re-implementations; this is the direct answer to §8.3's Hypothesis 2 stress. (2) Close or justify the 7 `Residue` rows. (3) Run the measurements marked `not_measured` above (transpile-surface coverage, full §1.1 falsifier sweep) before the next dossier rather than on its deadline day.
