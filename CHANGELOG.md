@@ -7,6 +7,17 @@ meta-HIR and the trait surfaces.
 
 ## [Unreleased]
 
+Work merged after the `v0.1.619` tag is cut lands here.
+
+### The `[0.1.619]` section is opened by the version bump (Refs #2124, PMAT-1496)
+
+- The release commit that bumps the workspace to `0.1.619` promotes the work
+  recorded below into a `## [0.1.619]` heading and opens this section above it,
+  so `changelog_freshness` and `changelog_release_membership_witness` both hold
+  before the tag exists (PMAT-1496).
+
+## [0.1.619] - 2026-11-15
+
 Work merged after the `v0.1.618` tag was cut. These entries were written into the
 `[0.1.618]` section because the release commit rolled `[Unreleased]` into it and did
 not open a replacement, leaving no correct heading to write under; `v0.1.618` does not
