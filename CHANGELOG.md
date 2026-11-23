@@ -16,6 +16,12 @@ Work merged after the `v0.1.619` tag is cut lands here.
   so `changelog_freshness` and `changelog_release_membership_witness` both hold
   before the tag exists (PMAT-1496).
 
+### `contracts/readme-root.yaml` adds C-README-ROOT, a SHACL shape for the repository README (xpile#2194, PMAT-1461)
+
+- New contract `C-README-ROOT` (`contracts/readme-root.yaml`) declares the shape
+  `README.md` must satisfy at the repository root. The contract is tagged with its
+  `id` and `xpile.layer` so the contract-ledger gates see it (PMAT-1461).
+
 ## [0.1.619] - 2026-11-15
 
 Work merged after the `v0.1.618` tag was cut. These entries were written into the
