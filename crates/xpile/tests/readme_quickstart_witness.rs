@@ -115,11 +115,11 @@ fn quickstart_python(md: &str) -> String {
 }
 
 fn quickstart_transcript(md: &str) -> String {
-    let block = fenced_block(md, "bash", |b| {
+    let block = fenced_block(md, "text", |b| {
         b.lines().next().map(str::trim) == Some(QUICKSTART_CMD)
     })
     .unwrap_or_else(|| {
-        panic!("README.md has a ```bash block whose first line is exactly `{QUICKSTART_CMD}`")
+        panic!("README.md has a ```text block whose first line is exactly `{QUICKSTART_CMD}`")
     });
     block
         .lines()
