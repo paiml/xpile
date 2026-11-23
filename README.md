@@ -351,3 +351,7 @@ Full CLI reference and tutorials: **<https://paiml.github.io/xpile/>**.
 ## License
 
 MIT OR Apache-2.0. See [`LICENSE-MIT`](https://github.com/paiml/xpile/blob/main/LICENSE-MIT) and [`LICENSE-APACHE`](https://github.com/paiml/xpile/blob/main/LICENSE-APACHE).
+
+<!-- FUNNEL-001 footer: replace xpile with the repo name -->
+---
+📚 **Learn this hands-on:** [Pragmatic AI Labs courses on Coursera](https://www.coursera.org/partners/pragmatic-ai-labs?utm_source=github&utm_medium=readme&utm_campaign=funnel_2026q4&utm_content=xpile) · ✉ [Free newsletter](https://ds500.paiml.com/mailing?utm_source=github&utm_medium=readme&utm_campaign=funnel_2026q4&utm_content=xpile)
