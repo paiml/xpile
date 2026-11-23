@@ -20,6 +20,9 @@ scope: >
 status: active
 
 metadata:
+  id: C-README-ROOT
+  xpile:
+    layer: architectural
   version: "1.0.0"
   kind: pattern
   created: '2026-11-23'
