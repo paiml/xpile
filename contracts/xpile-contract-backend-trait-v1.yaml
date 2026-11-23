@@ -131,7 +131,7 @@ equations:
       - "the ContractBackend impl is well-formed (Silver model preconditions inherited)"
     postconditions:
       - "an emitter returning a (contract, doc) pair where citations ≠ depends_on ++ references would not type-check against render_gold"
-      - "Gold-tier coverage is universal across the substrate (35/35 contracts) — a LIVE fraction, re-derived and enforced by claims_drift::substrate_census_claims_name_the_live_contract_count, so the thirty-sixth contract reds this line instead of silently ageing it (PMAT-1458)"
+      - "Gold-tier coverage is universal across the substrate (36/36 contracts) — a LIVE fraction, re-derived and enforced by claims_drift::substrate_census_claims_name_the_live_contract_count, so the thirty-seventh contract reds this line instead of silently ageing it (PMAT-1458)"
 
   render_homomorphism_platinum:
     # PMAT-212 / XPILE-REFINE-CONTRACT-BACKEND-TRAIT-003:

@@ -130,7 +130,7 @@ The contract substrate is gated by `cargo test --workspace` on every PR. The rel
 | `cargo test -p xpile --test kani_verify` | `cargo kani` actually discharges every harness; asserts exit-0 AND stdout contains `VERIFICATION:- SUCCESSFUL` (skip-gracefully if `cargo-kani` is missing from PATH) |
 | `cargo test -p xpile --test quorum` | `C-PY-INT-ARITH` has all four §14.4 strata represented |
 | `cargo test -p xpile --test attestations` | `xpile attestations` counts Extrinsic stratum votes per contract |
-| dedicated `kani` GitHub-Actions job | runs `cargo kani` over all 101 `#[kani::proof]` harnesses (24 files, covering 24 of 35 contracts) on every PR. **ADVISORY, not merge-blocking** — a red `kani` job does not stop a merge |
+| dedicated `kani` GitHub-Actions job | runs `cargo kani` over all 101 `#[kani::proof]` harnesses (24 files, covering 24 of 36 contracts) on every PR. **ADVISORY, not merge-blocking** — a red `kani` job does not stop a merge |
 
 **Do not read the merge-blocking set here.** It is the union over every ruleset
 protecting `main`, recorded as one receipt per ruleset under
@@ -143,7 +143,7 @@ only thing this table needs from it.
 
 ## Tier roadmap (per ruchy 5.0 §14.10.5)
 
-- **Bronze** (current): byte-identity modelling commitments, `rfl` by construction. All 35 contracts sit at Bronze.
+- **Bronze** (current): byte-identity modelling commitments, `rfl` by construction. All 36 contracts sit at Bronze.
 - **Silver** (v0.3.0+): typed AST models replace byte arrays; theorems become structural inductions; Kani harnesses target property-specific assertions rather than byte identity. Tracked per contract under `XPILE-REFINE-*-001+`.
 - **Gold** (v0.4.0+): Runtime witnesses (`*_diff_exec`-style fixtures + integration tests) added for the contracts not yet at four-stratum coverage — as of the snapshot above, the 11 at 3-stratum QUORUM plus the 9 at PARTIAL. The two three-stratum native-WASM contracts need the *Symbolic* stratum instead, not Runtime.
 - **Platinum** (v1.0.0+): each contract proven sound under a categorical interpretation; the substrate ships as a verified library, not just a tested one.
