@@ -294,7 +294,7 @@ Requires Rust 1.93+. For source builds and the optional dev tooling (`pv`,
 
 ## Usage
 
-```text
+```bash
 $ xpile info                                  # list registered frontends/backends
 $ xpile transpile factorial.py                # Python → Rust (default)
 $ xpile transpile factorial.py --target ruchy # Python → Ruchy
