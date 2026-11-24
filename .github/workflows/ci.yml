@@ -650,6 +650,13 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           prefix-key: "license-scan-v0"
+          # This job is red every night by design (the documented NOTICE.md
+          # rejections, see above), and rust-cache saves only after a job
+          # that succeeded unless told otherwise. So nothing was ever saved:
+          # run 45239287795 logs "No cache found", skips the Post step, and
+          # spends 103 s installing cargo-deny and 43 s building the
+          # tripwire. Saving on failure changes no step's result.
+          cache-on-failure: "true"
 
       - name: Install cargo-deny
         run: cargo install cargo-deny --locked --version 0.20.2
