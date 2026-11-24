@@ -148,3 +148,19 @@ bashrs  = { version = "0.1.619", path = "crates/bashrs-frontend",  package = "ba
 [profile.release]
 lto = "thin"
 codegen-units = 1
+
+# `cargo test --workspace` is the required `workspace-test` check and its
+# slowest step. Measured on main (ci run 45261060816, 2026-11-23): 896 s for
+# the step, of which 85 s is compiling and about 810 s is running 323 test
+# binaries one after another. The slowest binaries are CPU-bound scans of the
+# repository in the test crate's own code, built unoptimized
+# (`derived_corpus_vacuity_witness` 162 s, `book_published_command_witness`
+# 87 s, `transpile_e2e` 72 s). `opt-level = 1` optimizes that code and the
+# `xpile` binary the integration tests spawn. Debug assertions and overflow
+# checks stay on: they follow `debug-assertions` and `overflow-checks`, which
+# this profile still inherits from `dev`. `line-tables-only` keeps file and
+# line in panic backtraces and drops the rest of the debug info, which 323
+# linked test binaries otherwise each carry.
+[profile.test]
+opt-level = 1
+debug = "line-tables-only"
