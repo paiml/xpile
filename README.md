@@ -1,3 +1,9 @@
+---
+schema_version: "1.0"
+kind: cli
+entrypoints: [crates/xpile/src/main.rs]
+---
+
 <p align="center">
   <img src="docs/assets/hero.svg" alt="xpile architecture: a code lane (Python, C, Shell, WebAssembly → meta-HIR → Rust, Ruchy, PTX, WGSL, SPIR-V, WebAssembly, Lean 4, Shell, forjar) and a proof lane (LaTeX → contracts (YAML) → Lean 4 thm, LaTeX), whose two contract backends are registered scaffolds that render nothing yet" width="100%"/>
 </p>
@@ -20,7 +26,7 @@ transpile time with a reason instead of emitting code that silently diverges.
 
 ## Quickstart
 
-```bash
+```text
 cargo install xpile
 ```
 
@@ -30,7 +36,7 @@ def factorial(n: int) -> int:
     return 1 if n <= 1 else n * factorial(n - 1)
 ```
 
-```bash
+```text
 $ xpile transpile factorial.py
 // xpile-generated from Python module factorial
 
@@ -66,7 +72,7 @@ More runnable programs are in [`examples/`](https://github.com/paiml/xpile/tree/
 
 One meta-HIR, many backends:
 
-```bash
+```text
 $ xpile transpile factorial.py --target ruchy   # → Ruchy   (compiles to Rust)
 $ xpile transpile factorial.py --target lean    # → Lean 4  (def + citation docstring)
 $ xpile transpile factorial.py --target wasm    # → native WebAssembly text
@@ -186,6 +192,8 @@ lane that IS load-bearing today is the Lean *theorem* substrate under
 
 ## Contracts
 
+xpile carries <!-- CONTRACT_COUNT_START -->35<!-- CONTRACT_COUNT_END --> contracts under [`contracts/`](contracts/), counted by `pv-readme` from the YAML files `pv` walks.
+
 Every emittable construct is anchored to a contract in [`contracts/`](https://github.com/paiml/xpile/tree/main/contracts/),
 validated on every commit by `pv lint contracts/`. Each contract carries a Lean
 4 refinement theorem; most also carry a Kani bounded-model-checking harness. Each
@@ -245,6 +253,15 @@ original `cargo install depyler` / `decy` / `ruchy` consumers keep working.
 
 Every pull request runs:
 
+```bash
+cargo fmt --all -- --check
+cargo check --workspace
+cargo clippy --workspace --all-targets -- -D warnings
+pv lint contracts/
+cargo deny check advisories
+cargo test --workspace
+```
+
 | Gate | Command |
 |---|---|
 | Format | `cargo fmt --all -- --check` |
@@ -267,7 +284,7 @@ Workflow: [`.github/workflows/ci.yml`](https://github.com/paiml/xpile/blob/main/
 
 ## Install
 
-```bash
+```text
 cargo install xpile
 ```
 
@@ -319,7 +336,7 @@ annotation-free output; the library equivalent is
 that crate compiles to a **single portable WebAssembly binary** that runs on any
 OS/arch under a WASI runtime — no libc, architecture, or OS baked in:
 
-```bash
+```text
 $ xpile transpile examples/proven-model/model.py --emit-crate /tmp/model
 $ cd /tmp/model && cargo build --release --target wasm32-wasip1
 $ wasmtime run target/wasm32-wasip1/release/model.wasm    # output matches CPython

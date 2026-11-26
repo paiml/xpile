@@ -462,6 +462,10 @@ const SCREENS: &[(&str, &str)] = &[
     ("cargo check", "NEEDS_CHECKOUT_SLOW"),
     ("cargo clippy", "NEEDS_CHECKOUT_SLOW"),
     ("cargo build", "NEEDS_CHECKOUT_SLOW"),
+    (
+        "cargo test",
+        "NEEDS_CHECKOUT_SLOW — the CI-gates fence in README.md (#2195)",
+    ),
     // Tools this repository does not ship and CI does not install.
     ("pv lint", "NEEDS_EXTERNAL_TOOL — provable-contracts CLI"),
     ("wasmtime", "NEEDS_EXTERNAL_TOOL"),
