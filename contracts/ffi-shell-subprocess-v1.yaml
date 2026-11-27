@@ -164,7 +164,7 @@ equations:
       - "two ShellInvocation records (DecidableEq derived)"
     postconditions:
       - "an emitter that reordered or dropped argv elements would produce a distinct ShellInvocation, caught by (a)"
-      - "C-FFI-SHELL-SUBPROCESS reaches depth-1 — every contract carries ≥1 wired Diamond (depth-1 UNIVERSAL invariant preserved)"
+      - "C-FFI-SHELL-SUBPROCESS reaches depth-1 — every contract carries ≥1 wired Diamond (depth-1 floor invariant preserved)"
 
 falsification_tests:
   - id: FALSIFY-FFI-SHELL-SUBPROCESS-001
