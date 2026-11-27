@@ -284,7 +284,7 @@ Workflow: [`.github/workflows/ci.yml`](.github/workflows/ci.yml).
 
 ## Install
 
-```text
+```bash
 cargo install xpile
 ```
 

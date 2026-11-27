@@ -18,18 +18,18 @@ UNVERIFIED totals; PARTIAL is routinely non-zero.
 
 | Contract | `pv` kind | Layer × Lane | What it pins down |
 |---|---|---|---|
-| [`xpile-frontend-trait-v1.yaml`](../../../contracts/xpile-frontend-trait-v1.yaml) | pattern | 3 architectural / code | Frontend trait invariants |
-| [`xpile-backend-trait-v1.yaml`](../../../contracts/xpile-backend-trait-v1.yaml) | pattern | 3 / code | Backend trait + structural compile-contract citation |
-| [`xpile-contract-frontend-trait-v1.yaml`](../../../contracts/xpile-contract-frontend-trait-v1.yaml) | pattern | 3 / proof | ContractFrontend trait invariants |
-| [`xpile-contract-backend-trait-v1.yaml`](../../../contracts/xpile-contract-backend-trait-v1.yaml) | pattern | 3 / proof | ContractBackend + citation bridge via structured attrs |
-| [`py-int-arith-v1.yaml`](../../../contracts/py-int-arith-v1.yaml) | kernel | 1 semantics / code | Python `int` arithmetic with bigint promotion |
-| [`bashrs-posix-idempotence-v1.yaml`](../../../contracts/bashrs-posix-idempotence-v1.yaml) | pattern | 1 / code | POSIX shell idempotence, Python↔bashrs cross-domain |
-| [`xlate-py-list-to-vec-v1.yaml`](../../../contracts/xlate-py-list-to-vec-v1.yaml) | kernel | 2 translation / code | Python list → Rust Vec, alias-preserving |
-| [`xlate-lean-to-rust-v1.yaml`](../../../contracts/xlate-lean-to-rust-v1.yaml) | kernel | 2 / code | All Lean 4 constructs → Rust |
-| [`xlate-rust-fn-to-lean-thm-v1.yaml`](../../../contracts/xlate-rust-fn-to-lean-thm-v1.yaml) | kernel | 2 / proof | Rust fn + contract → Lean 4 theorem |
-| [`notation-latex-math-to-equation-v1.yaml`](../../../contracts/notation-latex-math-to-equation-v1.yaml) | kernel | 2 / proof | LaTeX math → equations; theorem envs → proof obligations |
-| [`ffi-cpython-ext-v1.yaml`](../../../contracts/ffi-cpython-ext-v1.yaml) | pattern | 4 hybrid / code | CPython C-extension boundary semantics |
-| [`compile-rust-to-ptx-mma-v1.yaml`](../../../contracts/compile-rust-to-ptx-mma-v1.yaml) | pattern | **5 compile / code** | PTX emission: `mma.sync`, `cp.async` pipelining, SMEM budget |
+| [`xpile-frontend-trait-v1.yaml`](https://github.com/paiml/xpile/blob/main/contracts/xpile-frontend-trait-v1.yaml) | pattern | 3 architectural / code | Frontend trait invariants |
+| [`xpile-backend-trait-v1.yaml`](https://github.com/paiml/xpile/blob/main/contracts/xpile-backend-trait-v1.yaml) | pattern | 3 / code | Backend trait + structural compile-contract citation |
+| [`xpile-contract-frontend-trait-v1.yaml`](https://github.com/paiml/xpile/blob/main/contracts/xpile-contract-frontend-trait-v1.yaml) | pattern | 3 / proof | ContractFrontend trait invariants |
+| [`xpile-contract-backend-trait-v1.yaml`](https://github.com/paiml/xpile/blob/main/contracts/xpile-contract-backend-trait-v1.yaml) | pattern | 3 / proof | ContractBackend + citation bridge via structured attrs |
+| [`py-int-arith-v1.yaml`](https://github.com/paiml/xpile/blob/main/contracts/py-int-arith-v1.yaml) | kernel | 1 semantics / code | Python `int` arithmetic with bigint promotion |
+| [`bashrs-posix-idempotence-v1.yaml`](https://github.com/paiml/xpile/blob/main/contracts/bashrs-posix-idempotence-v1.yaml) | pattern | 1 / code | POSIX shell idempotence, Python↔bashrs cross-domain |
+| [`xlate-py-list-to-vec-v1.yaml`](https://github.com/paiml/xpile/blob/main/contracts/xlate-py-list-to-vec-v1.yaml) | kernel | 2 translation / code | Python list → Rust Vec, alias-preserving |
+| [`xlate-lean-to-rust-v1.yaml`](https://github.com/paiml/xpile/blob/main/contracts/xlate-lean-to-rust-v1.yaml) | kernel | 2 / code | All Lean 4 constructs → Rust |
+| [`xlate-rust-fn-to-lean-thm-v1.yaml`](https://github.com/paiml/xpile/blob/main/contracts/xlate-rust-fn-to-lean-thm-v1.yaml) | kernel | 2 / proof | Rust fn + contract → Lean 4 theorem |
+| [`notation-latex-math-to-equation-v1.yaml`](https://github.com/paiml/xpile/blob/main/contracts/notation-latex-math-to-equation-v1.yaml) | kernel | 2 / proof | LaTeX math → equations; theorem envs → proof obligations |
+| [`ffi-cpython-ext-v1.yaml`](https://github.com/paiml/xpile/blob/main/contracts/ffi-cpython-ext-v1.yaml) | pattern | 4 hybrid / code | CPython C-extension boundary semantics |
+| [`compile-rust-to-ptx-mma-v1.yaml`](https://github.com/paiml/xpile/blob/main/contracts/compile-rust-to-ptx-mma-v1.yaml) | pattern | **5 compile / code** | PTX emission: `mma.sync`, `cp.async` pipelining, SMEM budget |
 
 The Lean theorems and Kani harnesses for each contract live at the
 parallel paths

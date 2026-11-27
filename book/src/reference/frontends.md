@@ -173,7 +173,7 @@ across every surface that states it.
 
 
 For the full list, see the
-[CHANGELOG `Python subset (live, runtime-verified)`](../../../CHANGELOG.md)
+[CHANGELOG `Python subset (live, runtime-verified)`](https://github.com/paiml/xpile/blob/main/CHANGELOG.md)
 section — that's the canonical list to avoid duplication-and-drift.
 
 ### Operator surface

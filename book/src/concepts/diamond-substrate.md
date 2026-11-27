@@ -1,6 +1,6 @@
 # The Diamond-tier substrate
 
-> **Source of truth:** [`docs/specifications/sub/diamond-taxonomy.md`](../../../docs/specifications/sub/diamond-taxonomy.md)
+> **Source of truth:** [`docs/specifications/sub/diamond-taxonomy.md`](https://github.com/paiml/xpile/blob/main/docs/specifications/sub/diamond-taxonomy.md)
 > in the canonical spec. The Diamond program runs in parallel to the
 > book and is the deepest layer of contract enforcement.
 
