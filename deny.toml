@@ -43,21 +43,6 @@ allow = [
 ]
 confidence-threshold = 0.93
 
-# Per-crate exceptions, not new global allows (#2180). Each names the one crate that
-# pulls the license and the path that needs it. Both are permissive.
-# foldhash 0.1.5 and 0.2.0 (Zlib): wgpu-hal -> gpu-descriptor / gpu-allocator -> hashbrown.
-[[licenses.exceptions]]
-name = "foldhash"
-allow = ["Zlib"]
-# hexf-parse 0.2.1 (CC0-1.0): wgpu -> naga -> xpile-spirv-codegen.
-# tiny-keccak 2.0.2 (CC0-1.0): rustpython-parser -> depyler-frontend.
-[[licenses.exceptions]]
-name = "hexf-parse"
-allow = ["CC0-1.0"]
-[[licenses.exceptions]]
-name = "tiny-keccak"
-allow = ["CC0-1.0"]
-
 [bans]
 multiple-versions = "warn"
 wildcards = "deny"
