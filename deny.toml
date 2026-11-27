@@ -40,11 +40,23 @@ allow = [
     "ISC",
     "Unicode-DFS-2016",
     "Unicode-3.0",
-    # Refs #2180: permissive, transitive via foldhash (Zlib), hexf-parse and tiny-keccak (CC0-1.0)
-    "Zlib",
-    "CC0-1.0",
 ]
 confidence-threshold = 0.93
+# Refs #2180: per-crate exceptions, so no permissive license is allowed globally.
+# foldhash (Zlib), hexf-parse and tiny-keccak (CC0-1.0) are transitive via the
+# nightly build graph; each is named here with its one license.
+[[licenses.exceptions]]
+crate = "foldhash"
+allow = ["Zlib"]
+
+[[licenses.exceptions]]
+crate = "hexf-parse"
+allow = ["CC0-1.0"]
+
+[[licenses.exceptions]]
+crate = "tiny-keccak"
+allow = ["CC0-1.0"]
+
 
 [bans]
 multiple-versions = "warn"
