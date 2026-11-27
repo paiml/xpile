@@ -1,0 +1,184 @@
+name: nightly
+
+# Nightly xpile binary (Refs #2149). Operator rule: "nightly binary built is
+# hard requirement for sovereign stack".
+#
+# Acceptance, as written on #2149:
+#   - builds ONLY when main moved since the last nightly AND ci is green on
+#     that exact SHA;
+#   - publishes the binary with its sha256 to the `nightly` prerelease, the
+#     release body stamped with the SHA it was built from;
+#   - when red, publishes NO binary; the red night fails the `decide` job and
+#     is visible in the run list (never silently skipped).
+#
+# Three jobs, least privilege each:
+#   decide  reads only (contents: read, actions: read)
+#   build   checks out and compiles with contents: read; uploads an artifact.
+#           No token with write scope is present in this job.
+#   publish contents: write; NO checkout, NO cargo. It downloads the artifact,
+#           verifies the sha256, then uploads, moves the tag forward only, and
+#           stamps the body LAST.
+# Every job refuses to run unless the ref is main, so a dispatch from another
+# branch cannot publish.
+#
+# A night check cannot block a merge or a release: it runs only on schedule
+# and workflow_dispatch (PMAT-2170).
+
+on:
+  schedule:
+    - cron: "17 4 * * *"
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: nightly
+  cancel-in-progress: false
+
+jobs:
+  decide:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      build: ${{ steps.decide.outputs.build }}
+      sha: ${{ steps.decide.outputs.sha }}
+    steps:
+      - name: main moved, and ci green on that sha?
+        id: decide
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          # The branch ref, read unambiguously (not commits/main, which a tag
+          # named main could shadow).
+          sha=$(gh api "repos/${REPO}/git/ref/heads/main" --jq .object.sha)
+          if ! printf '%s' "$sha" | grep -Eq '^[0-9a-f]{40}$'; then
+            echo "::error::main ref did not resolve to a SHA"
+            exit 1
+          fi
+          echo "main is at ${sha}"
+
+          # Last stamp. A 404 means no nightly release yet; any other error
+          # fails the run (never read as "no release" and rebuilt by accident).
+          err=$(mktemp)
+          if last=$(gh api "repos/${REPO}/releases/tags/nightly" --jq '.body // ""' 2>"$err"); then
+            last=$(printf '%s\n' "$last" | grep -oE 'built-from-sha: [0-9a-f]{40}' | awk '{print $2}' || true)
+          elif grep -q 'HTTP 404' "$err"; then
+            last=""
+          else
+            cat "$err" >&2
+            echo "::error::could not read the nightly release"
+            exit 1
+          fi
+
+          if [ "$last" = "$sha" ]; then
+            echo "nightly already built from ${sha}; nothing to do"
+            echo "build=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # CI on this exact SHA, pushed to main. The newest run decides.
+          conclusion=$(gh run list --repo "$REPO" --workflow ci.yml --branch main --commit "$sha" \
+            --event push --json status,conclusion \
+            --jq 'if length == 0 then "none" elif .[0].status != "completed" then "pending" else (.[0].conclusion // "none") end')
+          echo "ci on ${sha}: ${conclusion}"
+          if [ "$conclusion" != "success" ]; then
+            echo "::error::ci is not green on ${sha} (${conclusion}); publishing no nightly binary"
+            echo "build=false" >> "$GITHUB_OUTPUT"
+            exit 1
+          fi
+          echo "build=true" >> "$GITHUB_OUTPUT"
+          echo "sha=${sha}" >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: decide
+    if: needs.decide.outputs.build == 'true' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.decide.outputs.sha }}
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: build xpile (release, locked)
+        run: cargo build --release --locked -p xpile --bin xpile
+      - name: stage the binary and its sha256
+        run: |
+          set -euo pipefail
+          mkdir -p staged
+          cp target/release/xpile staged/xpile-nightly-linux-x86_64
+          (cd staged && sha256sum xpile-nightly-linux-x86_64 > xpile-nightly-linux-x86_64.sha256)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: xpile-nightly
+          path: staged/
+          if-no-files-found: error
+
+  publish:
+    needs: [decide, build]
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: xpile-nightly
+          path: staged
+      - name: verify sha256 before anything is published
+        working-directory: staged
+        run: sha256sum -c xpile-nightly-linux-x86_64.sha256
+      - name: publish, move the tag forward only, stamp last
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          SHA: ${{ needs.decide.outputs.sha }}
+        working-directory: staged
+        run: |
+          set -euo pipefail
+          err=$(mktemp)
+
+          # Create the prerelease if absent; otherwise the tag is moved below.
+          if gh api "repos/${REPO}/releases/tags/nightly" >/dev/null 2>"$err"; then
+            :
+          elif grep -q 'HTTP 404' "$err"; then
+            gh release create nightly --repo "$REPO" --prerelease \
+              --title "nightly" --notes "nightly build in progress" --target "$SHA"
+          else
+            cat "$err" >&2
+            echo "::error::could not read the nightly release"
+            exit 1
+          fi
+
+          # Tag may only move FORWARD: the current nightly commit must be an
+          # ancestor of the built SHA (compare status "ahead" or "identical").
+          cur=$(gh api "repos/${REPO}/git/ref/tags/nightly" --jq .object.sha)
+          if [ "$cur" != "$SHA" ]; then
+            status=$(gh api "repos/${REPO}/compare/${cur}...${SHA}" --jq .status)
+            case "$status" in
+              ahead) ;;
+              *) echo "::error::nightly tag at ${cur} is not an ancestor of ${SHA} (${status}); refusing to move it"; exit 1 ;;
+            esac
+          fi
+
+          # Move the tag first, WITHOUT force: GitHub rejects a non-fast-forward
+          # update server-side, closing the race with the check above. Skipped
+          # when the tag already points at SHA (a retry after a failed upload).
+          if [ "$cur" != "$SHA" ]; then
+            gh api -X PATCH "repos/${REPO}/git/refs/tags/nightly" -f sha="$SHA" >/dev/null
+          fi
+
+          gh release upload nightly --repo "$REPO" --clobber \
+            xpile-nightly-linux-x86_64 xpile-nightly-linux-x86_64.sha256
+
+          # Stamp last: only a fully uploaded binary records the SHA it came from.
+          body=$(printf 'Nightly xpile build.\n\nbuilt-from-sha: %s\n' "$SHA")
+          gh release edit nightly --repo "$REPO" --prerelease --notes "$body"
+          gh api "repos/${REPO}/releases/tags/nightly" --jq '.body'
