@@ -105,13 +105,13 @@ The substrate enforces this at four strata:
 
 | Concept | File |
 |---|---|
-| Contract YAML | [`contracts/bashrs-posix-idempotence-v1.yaml`](https://github.com/paiml/xpile/blob/main/contracts/bashrs-posix-idempotence-v1.yaml) |
-| Lean theorems | [`contracts/lean/Bashrs.lean`](https://github.com/paiml/xpile/blob/main/contracts/lean/Bashrs.lean) |
-| Kani harness | [`contracts/kani/bashrs.rs`](https://github.com/paiml/xpile/blob/main/contracts/kani/bashrs.rs) |
+| Contract YAML | [`contracts/bashrs-posix-idempotence-v1.yaml`](../../../contracts/bashrs-posix-idempotence-v1.yaml) |
+| Lean theorems | [`contracts/lean/Bashrs.lean`](../../../contracts/lean/Bashrs.lean) |
+| Kani harness | [`contracts/kani/bashrs.rs`](../../../contracts/kani/bashrs.rs) |
 | Frontend | `crates/bashrs-frontend/src/` |
 | Backend | `crates/bashrs-backend/src/` |
 | Fixture | `tests/fixtures/bashrs_realistic_demo.sh` |
-| Sub-spec | [`docs/specifications/sub/bashrs-merger.md`](https://github.com/paiml/xpile/blob/main/docs/specifications/sub/bashrs-merger.md) |
+| Sub-spec | [`docs/specifications/sub/bashrs-merger.md`](../../../docs/specifications/sub/bashrs-merger.md) |
 
 ## What's next
 

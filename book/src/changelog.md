@@ -1,7 +1,7 @@
 # Changelog
 
 The canonical changelog lives at
-[`CHANGELOG.md`](https://github.com/paiml/xpile/blob/main/CHANGELOG.md)
+[`CHANGELOG.md`](../../CHANGELOG.md)
 in the repository root.
 
 ## v0.1.0 — 2026-05-20 — first real release

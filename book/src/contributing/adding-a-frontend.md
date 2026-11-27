@@ -135,5 +135,5 @@ gate as a required status check.
 
 Once the contract is at QUORUM, add a structural-extensionality
 Diamond theorem to push the substrate towards UNIVERSAL coverage at
-the next depth. See [`docs/specifications/sub/diamond-taxonomy.md`](https://github.com/paiml/xpile/blob/main/docs/specifications/sub/diamond-taxonomy.md)
+the next depth. See [`docs/specifications/sub/diamond-taxonomy.md`](../../../docs/specifications/sub/diamond-taxonomy.md)
 for the template families.

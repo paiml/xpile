@@ -118,9 +118,9 @@ discharged two different ways depending on the host language.
 
 | Concept | File |
 |---|---|
-| Contract YAML | [`contracts/py-int-arith-v1.yaml`](https://github.com/paiml/xpile/blob/main/contracts/py-int-arith-v1.yaml) |
-| Lean theorems | [`contracts/lean/PyIntArith.lean`](https://github.com/paiml/xpile/blob/main/contracts/lean/PyIntArith.lean) |
-| Kani harness | [`contracts/kani/py_int_arith.rs`](https://github.com/paiml/xpile/blob/main/contracts/kani/py_int_arith.rs) |
+| Contract YAML | [`contracts/py-int-arith-v1.yaml`](../../../contracts/py-int-arith-v1.yaml) |
+| Lean theorems | [`contracts/lean/PyIntArith.lean`](../../../contracts/lean/PyIntArith.lean) |
+| Kani harness | [`contracts/kani/py_int_arith.rs`](../../../contracts/kani/py_int_arith.rs) |
 | Frontend lowering | `crates/depyler-frontend/src/` |
 | Rust backend emit | `crates/xpile-rust-codegen/src/` |
 | Lean backend emit | `crates/xpile-lean-codegen/src/` |
