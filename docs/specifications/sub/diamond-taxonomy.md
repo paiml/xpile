@@ -624,8 +624,8 @@ diamond_coverage` and `xpile diamond` for those.
 
 **Universal, over every contract in the substrate:**
 
-- The depth-1 floor (enforced by `diamond_coverage.rs`) covers the corpus's contracts
-  other than `C-README-ROOT`, which carries no wired Diamond equation yet. This is the one floor the file asserts.
+- Every contract in the current corpus has ≥1 wired Diamond equation (the depth-1
+  floor, enforced by `diamond_coverage.rs`). This is the one floor the file asserts.
 - The aggregate Diamond total does not fall below its post-PMAT-250 baseline.
 
 **A floor over the GRANDFATHERED cohort — the 13 contracts named in
