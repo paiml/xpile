@@ -40,6 +40,9 @@ allow = [
     "ISC",
     "Unicode-DFS-2016",
     "Unicode-3.0",
+    # Refs #2180: permissive, transitive via foldhash (Zlib), hexf-parse and tiny-keccak (CC0-1.0)
+    "Zlib",
+    "CC0-1.0",
 ]
 confidence-threshold = 0.93
 
